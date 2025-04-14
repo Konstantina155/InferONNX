@@ -1,0 +1,56 @@
+
+Model: squeezenet1.0-7.onnx
+Total time - client: 45.277000 ms
+Time to read request from client: 0.355000 ms
+Time to write response to client: 0.073000 ms
+Time to process the request: 44.806000 ms
+Total time - server: 45.234000 ms
+
+Model: mobilenetv2-7.onnx
+Total time - client: 162.401000 ms
+Time to read request from client: 0.215000 ms
+Time to write response to client: 0.054000 ms
+Time to process the request: 162.080000 ms
+Total time - server: 162.349000 ms
+
+Model: densenet-7.onnx
+Total time - client: 386.345000 ms
+Time to read request from client: 0.221000 ms
+Time to write response to client: 0.064000 ms
+Time to process the request: 386.052000 ms
+Total time - server: 386.337000 ms
+
+Model: efficientnet-lite4-11.onnx
+Total time - client: 521.491000 ms
+Time to read request from client: 0.284000 ms
+Time to write response to client: 0.038000 ms
+Time to process the request: 521.160000 ms
+Total time - server: 521.482000 ms
+
+Model: inception-v3-12.onnx
+Total time - client: 602.637000 ms
+Time to read request from client: 0.416000 ms
+Time to write response to client: 0.049000 ms
+Time to process the request: 602.169000 ms
+Total time - server: 602.634000 ms
+
+Model: resnet101-v2-7.onnx
+Total time - client: 848.377000 ms
+Time to read request from client: 0.199000 ms
+Time to write response to client: 0.049000 ms
+Time to process the request: 848.056000 ms
+Total time - server: 848.304000 ms
+
+Model: resnet152-v2-7.onnx
+Total time - client: 1093.369000 ms
+Time to read request from client: 0.201000 ms
+Time to write response to client: 0.025000 ms
+Time to process the request: 1093.046000 ms
+Total time - server: 1093.272000 ms
+
+Model: efficientnet-v2-l-18.onnx
+Total time - client: 1266.276000 ms
+Time to read request from client: 0.209000 ms
+Time to write response to client: 0.035000 ms
+Time to process the request: 1265.999000 ms
+Total time - server: 1266.243000 ms
