@@ -452,7 +452,7 @@ send_request(char *client_request, size_t request_len, int mode)
     fprintf(stderr, " ok\n");
 
     /*
-     * 2. Setup stuff
+     * 2. Setup SSL/TLS structure
      */
     fprintf(stderr, "Setting up the SSL/TLS structure...");
     fflush(stdout);
@@ -670,7 +670,21 @@ exit:
     if (exit_code != MBEDTLS_EXIT_SUCCESS) return;
 }
 
-int filter_dir(const char *dir_path, const char *name);
+int
+filter_dir(const char *dir_path, const char *name)
+{
+    struct stat st;
+    char full_path[1024];
+
+    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
+
+    if (stat(full_path, &st) != 0) {
+        perror("stat");
+        return 0;
+    }
+
+    return S_ISDIR(st.st_mode);
+}
 
 void
 send_models(char **input_files, struct dirent **namelist, const char *dir_path, int num_models)
@@ -1054,23 +1068,6 @@ int
 version_sort(const struct dirent **a, const struct dirent **b)
 {
     return custom_strverscmp((*a)->d_name, (*b)->d_name);
-}
-
-
-int
-filter_dir(const char *dir_path, const char *name)
-{
-    struct stat st;
-    char full_path[1024];
-
-    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
-
-    if (stat(full_path, &st) != 0) {
-        perror("stat");
-        return 0;
-    }
-
-    return S_ISDIR(st.st_mode);
 }
 
 int
