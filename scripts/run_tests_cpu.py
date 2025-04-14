@@ -17,15 +17,15 @@ except ValueError:
 
 configuration = sys.argv[1]
 inferONNX_path = sys.argv[3]
-tls_support_path = inferONNX_path + "/src/tls_support"
-no_tls_support_path = inferONNX_path + "/src/no_tls_support"
-tag_file_path = inferONNX_path + "/src/no_tls_support/tag_file.txt"
+tls_server_path = inferONNX_path + "/src/tls_server"
+no_tls_server_path = inferONNX_path + "/src/no_tls_server"
+tag_file_path = inferONNX_path + "/src/no_tls_server/tag_file.txt"
 path_to_occlum = sys.argv[4]
 path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 path_models = [""] * len(path)
 
 def init_server_client():
-    os.chdir(f"{tls_support_path}/src")
+    os.chdir(f"{tls_server_path}/src")
     command = f"make clean && make USE_AES=0 USE_OCCLUM=0 USE_SYS_TIME=1 server"
     print(f"Command: {command}")
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
@@ -34,7 +34,7 @@ def init_server_client():
         print(f"Error: {err.decode()}")
         exit(1)
 
-    os.chdir(tls_support_path)
+    os.chdir(tls_server_path)
     command = f"make clean && make USE_AES=0 USE_OCCLUM=0 USE_SYS_TIME=0"
     print(f"Command: {command}")
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
@@ -48,7 +48,7 @@ def init(use_aes):
         use_memory_only = 0
     else:
         use_memory_only = 1
-    os.chdir(no_tls_support_path)
+    os.chdir(no_tls_server_path)
     command = f"make clean && make USE_AES={use_aes} USE_MEMORY_ONLY={use_memory_only}"
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (out, err) = output.communicate()
@@ -56,7 +56,7 @@ def init(use_aes):
         print(f"Error: {err.decode()}")
         exit(1)
 
-    os.chdir(f"{no_tls_support_path}/src")
+    os.chdir(f"{no_tls_server_path}/src")
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (out, err) = output.communicate()
     if err:
@@ -83,16 +83,16 @@ def extract_hex_numbers(text):
 
 def client_side(path_model, unique_id):
     if configuration == "tls_memory_only":
-        client_command = f"{tls_support_path}/./ssl_client"
+        client_command = f"{tls_server_path}/./ssl_client"
     else:
-        client_command = f"{no_tls_support_path}/./client"
+        client_command = f"{no_tls_server_path}/./client"
     
     tme.sleep(2)
 
     current_dir = os.getcwd()
     print(f"\nCurrent directory: {current_dir}")
 
-    path_ = f"{tls_support_path}/models/" + path[unique_id]
+    path_ = f"{tls_server_path}/models/" + path[unique_id]
 
     if configuration == "on_disk":
         output = subprocess.Popen("sudo sysctl -w vm.drop_caches=3", stdout=subprocess.PIPE, shell=True)
@@ -134,9 +134,9 @@ def thread_to_run_client(path_model, unique_id):
     client.start()
 
     if configuration == "tls_memory_only":
-        os.chdir(f"{tls_support_path}/src")
+        os.chdir(f"{tls_server_path}/src")
     else:
-        os.chdir(f"{no_tls_support_path}/src")
+        os.chdir(f"{no_tls_server_path}/src")
     subprocess.run("./server")
     client.join()
 
@@ -149,9 +149,9 @@ def manage_connection():
 
 def close_connection():
     if configuration == "tls_memory_only":
-        command = f"{tls_support_path}/./ssl_client quit"
+        command = f"{tls_server_path}/./ssl_client quit"
     else:
-        command = f"{no_tls_support_path}/./client quit"
+        command = f"{no_tls_server_path}/./client quit"
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     output.wait()
 
