@@ -38,17 +38,17 @@ if not inferONNX_path:
     exit(1)
 
 path_to_scripts = inferONNX_path + "/scripts"
-tag_file_path = inferONNX_path + '/src/tls_support/tag_file.txt'
-if not os.path.exists(tag_file_path):
-    with open(tag_file_path, "w") as f:
+tag_tls_server = inferONNX_path + '/src/tls_server/tag_file.txt'
+if not os.path.exists(tag_tls_server):
+    with open(tag_tls_server, "w") as f:
         f.write("")
 
-no_ssl_tag_file_path = inferONNX_path + '/src/tls_support/tag_file.txt'
-if not os.path.exists(no_ssl_tag_file_path):
-    with open(no_ssl_tag_file_path, "w") as f:
+tag_no_tls_server = inferONNX_path + '/src/no_tls_server/tag_file.txt'
+if not os.path.exists(tag_no_tls_server):
+    with open(tag_no_tls_server, "w") as f:
         f.write("")
 
-os.system(f"python3 {path_to_scripts}/run_tests_cpu.py tls_memory_only 1 {inferONNX_path} {path_to_occlum}")
+os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk 1 {inferONNX_path} {path_to_occlum}")
 
 
 #os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk entire 1 {inferONNX_path} {path_to_occlum}")

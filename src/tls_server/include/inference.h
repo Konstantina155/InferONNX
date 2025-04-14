@@ -26,7 +26,7 @@
     void load_model_to_memory(model **m, unsigned char **tags, int count_tags);
     #if USE_MEMORY_ONLY
         void run_inference(operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
-        char *inference_cache(float **images, int num_images, model *m);
+        char *inference_memory_only(float **images, int num_images, model *m);
     #else
         void run_inference(operator_node **node, TractValue **input_values, struct EncryptionParameters *params);
         char *inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags);

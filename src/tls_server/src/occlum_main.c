@@ -699,7 +699,7 @@ handle_request(char *client_request, onnx_table *table)
 
  #if USE_MEMORY_ONLY == 1
         if (tags) {
-            fprintf(stderr, "Invalid request for MODEL_INPUT for tags for cache\n");
+            fprintf(stderr, "Invalid request for MODEL_INPUT for tags for memory-only\n");
             free_request(&req_copy);
             return NULL;
         }
@@ -747,7 +747,7 @@ handle_request(char *client_request, onnx_table *table)
 #if USE_MEMORY_ONLY == 0
         result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
 #else
-        result = inference_cache(input, num_inputs, m);
+        result = inference_memory_only(input, num_inputs, m);
 #endif
 
         if (!result) {
