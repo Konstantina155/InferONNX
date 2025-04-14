@@ -41,7 +41,7 @@ add_path_to_names(char **names, int size_names)
     }
 
     for (int i = 0; i < size_names; ++i) {
-        char path[256];
+        char path[512];
 #ifdef USE_AES
         snprintf(path, sizeof(path), "%s/encrypted_models/", home_dir);
 #else
@@ -969,7 +969,7 @@ main(void)
     fprintf(stderr, " ok\n");
 
     /*
-     * 4. Setup stuff
+     * 4. Setup SSL data
      */
     fprintf(stderr, "Setting up the SSL data....");
     fflush(stdout);

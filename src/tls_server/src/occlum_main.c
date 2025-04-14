@@ -37,7 +37,7 @@ add_path_to_names(char **names, int size_names)
     const char *home_dir = "/bin";
 
     for (int i = 0; i < size_names; ++i) {
-        char path[256];
+        char path[512];
         snprintf(path, sizeof(path), "%s/encrypted_models/", home_dir);
         strcat(path, names[i]);
         free(names[i]);

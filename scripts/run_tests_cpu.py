@@ -62,6 +62,8 @@ def init(use_aes):
     if err:
         print(f"Error: {err.decode()}")
         exit(1)
+        
+    os.chdir(f"{inferONNX_path}/scripts")
 
 def extract_hex_numbers(text):
     text = text.decode('utf-8')
@@ -92,7 +94,7 @@ def client_side(path_model, unique_id):
     current_dir = os.getcwd()
     print(f"\nCurrent directory: {current_dir}")
 
-    path_ = f"{tls_server_path}/models/" + path[unique_id]
+    path_ = f"{inferONNX_path}/models/" + path[unique_id]
 
     if configuration == "on_disk":
         output = subprocess.Popen("sudo sysctl -w vm.drop_caches=3", stdout=subprocess.PIPE, shell=True)
@@ -101,9 +103,8 @@ def client_side(path_model, unique_id):
             print(f"Error: {err.decode()}")
             exit(1)
 
-    input_file = path_ + "test_data_set_0/input_0.pb"
-
-    command = client_command + " models " + input_file + " " + path_ + " " + path_ + path_model
+    command = client_command + " models " +  path_ + "test_data_set_0/input_0.pb " + path_ + path_model
+    print(command)
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     time, err = output.communicate()
 
@@ -120,7 +121,7 @@ def client_side(path_model, unique_id):
     else:
         tag_file = ""
 
-    command = client_command + " inputs 1 " + tag_file + " " + input_file
+    command = client_command + " inputs 1 " + tag_file + " " + path_ + "test_data_set_0/input_0.pb"
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (pred, err) = output.communicate()
     if err:
@@ -134,7 +135,7 @@ def thread_to_run_client(path_model, unique_id):
     client.start()
 
     if configuration == "tls_memory_only":
-        os.chdir(f"{tls_server_path}/src")
+        os.chdir(f"../{inferONNX_path}")
     else:
         os.chdir(f"{no_tls_server_path}/src")
     subprocess.run("./server")
