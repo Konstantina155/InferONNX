@@ -424,6 +424,7 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
         (*node)->outputs[i] = outputs[i];
     }
     (*node)->outputs[num_outputs] = NULL;
+    free(outputs);
     (*node)->pred = max;
     (*node)->category = argmax;
     (*node)->elapsedTime = elapsed_time;
@@ -599,7 +600,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
 
 #ifdef USE_MEMORY_ONLY
 char *
-inference_cache(float **images, int num_images, model *m)
+inference_memory_only(float **images, int num_images, model *m)
 {
 #ifdef USE_SYS_TIME
     struct timeval t1_inf, t2_inf;

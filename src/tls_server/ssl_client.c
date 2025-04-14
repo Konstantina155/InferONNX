@@ -59,7 +59,6 @@ size_of_file(FILE *fd)
     }
 
     return (int)size;
-
 }
 
 size_t

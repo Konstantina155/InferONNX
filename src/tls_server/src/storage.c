@@ -267,7 +267,7 @@ free_onnx_table(onnx_table* table)
     for (int i = 0; i < CAPACITY; i++) {
         current = table->model[i];
         while (current) {
-            //fprintf(stderr, "Freeing model with id: %s\n", current->id);
+            fprintf(stderr, "Freeing model with id: %s\n", current->id);
             tmp = current->next;
             deallocate_model(current);
             current = tmp;

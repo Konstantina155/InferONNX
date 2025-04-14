@@ -24,7 +24,7 @@ if not have_certificates:
 
 os.system(f"cp {path_to_occlum}/certificates/* {path_to_occlum}/occlum_workspace/image/bin")
 
-search_dirs = ["/home", "/hdd", "/etc", os.path.expanduser("~")]
+search_dirs = ["/hdd", os.path.expanduser("~")]
 
 inferONNX_path = None
 for search_dir in search_dirs:
@@ -48,12 +48,12 @@ if not os.path.exists(tag_no_tls_server):
     with open(tag_no_tls_server, "w") as f:
         f.write("")
 
-os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk 1 {inferONNX_path} {path_to_occlum}")
+os.system(f"python3 {path_to_scripts}/run_tests_cpu.py memory_only 1 {inferONNX_path} {path_to_occlum}")
 
 
-#os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk entire 1 {inferONNX_path} {path_to_occlum}")
 #os.system(f"python3 {path_to_scripts}/run_tests_occlum.py on_disk partitions 1 {inferONNX_path} {path_to_occlum}")
 #os.system(f"python3 {path_to_scripts}/run_tests_occlum.py memory_only entire 1 {inferONNX_path} {path_to_occlum}")
 #os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk 1 {inferONNX_path} {path_to_occlum}")
 #os.system(f"python3 {path_to_scripts}/run_tests_cpu.py memory_only 1 {inferONNX_path} {path_to_occlum}")
+#os.system(f"python3 {path_to_scripts}/run_tests_cpu.py tls_memory_only 1 {inferONNX_path} {path_to_occlum}")
 
