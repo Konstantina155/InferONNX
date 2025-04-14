@@ -1,0 +1,24 @@
+Partition_1: 30.076000 ms
+Inference time: 43.565000 ms
+Inference time to run a model: 30.076000 ms
+Partition_1: 134.764000 ms
+Inference time: 161.678000 ms
+Inference time to run a model: 134.764000 ms
+Partition_1: 318.749000 ms
+Inference time: 385.850000 ms
+Inference time to run a model: 318.749000 ms
+Partition_1: 491.678000 ms
+Inference time: 520.899000 ms
+Inference time to run a model: 491.678000 ms
+Partition_1: 515.602000 ms
+Inference time: 601.880000 ms
+Inference time to run a model: 515.602000 ms
+Partition_1: 599.455000 ms
+Inference time: 847.627000 ms
+Inference time to run a model: 599.455000 ms
+Partition_1: 753.000000 ms
+Inference time: 1092.855000 ms
+Inference time to run a model: 753.000000 ms
+Partition_1: 1058.996000 ms
+Inference time: 1265.826000 ms
+Inference time to run a model: 1058.996000 ms
