@@ -20,8 +20,8 @@ except ValueError:
 configuration = sys.argv[1]
 entire_or_partition = sys.argv[2]
 inferONNX_path = sys.argv[4]
-tls_server_path = inferONNX_path + "/src/tls_server"
-tag_file_path = inferONNX_path + "/src/tls_server/tag_file.txt"
+server_with_tls_path = inferONNX_path + "/src/server_with_tls"
+tag_file_path = server_with_tls_path + "/tag_file.txt"
 path_to_occlum = sys.argv[5]
 path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 if entire_or_partition == "partitions":
@@ -29,6 +29,9 @@ if entire_or_partition == "partitions":
 else:
     path_models = [""] * len(path)
 occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "700MB", "2GB", "2GB", "3GB"]
+
+previous_path = os.getcwd()
+print(previous_path)
 
 def form_array_of_partitions_operators(path):
     file_list = os.listdir(path)
@@ -41,14 +44,14 @@ def init_client(use_sys_time):
     else:
         use_memory_only = 0
     command = f"make clean && make USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time}"
-    os.chdir(tls_server_path)
+    os.chdir(server_with_tls_path)
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (pred, err) = output.communicate()
     if err:
         print(f"Error: {err.decode()}")
         exit(1)
 
-    os.chdir(f"{tls_server_path}/src")
+    os.chdir(f"{server_with_tls_path}/src")
     command = f"make clean && make USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} occlum_server"
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (pred, err) = output.communicate()
@@ -90,7 +93,7 @@ def client_side(path_model, unique_id):
     path_ = inferONNX_path + "/models/" + path[unique_id]
     tme.sleep(20)
 
-    command = f"{tls_server_path}/ssl_client models " + path_ + "test_data_set_0/input_0.pb " + path_ + path_model
+    command = f"{server_with_tls_path}/ssl_client models " + path_ + "test_data_set_0/input_0.pb " + path_ + path_model
     print(command)
     output = subprocess.Popen([command], stderr=subprocess.PIPE, shell=True)
     _, time = output.communicate()
@@ -103,7 +106,7 @@ def client_side(path_model, unique_id):
     else:
         tag_file = ""
 
-    command = f"{tls_server_path}/ssl_client inputs 1 " + tag_file + " " + path_ + "test_data_set_0/input_0.pb"
+    command = f"{server_with_tls_path}/ssl_client inputs 1 " + tag_file + " " + path_ + "test_data_set_0/input_0.pb"
     print(command)
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (pred, err) = output.communicate()
@@ -155,28 +158,30 @@ def manage_connection():
             client = threading.Thread(args=(path_model, unique_id),target=client_side)
             client.start()
 
-            load_models = subprocess.run(f"cp {tls_server_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server", shell=True)
+            load_models = subprocess.run(f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server", shell=True)
             client.join()
 
             init_client(1)
             client = threading.Thread(args=(path_model, unique_id),target=client_side)
             client.start()
 
-            inference = subprocess.run(f"cp {tls_server_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server", stderr=subprocess.PIPE, shell=True)
+            inference = subprocess.run(f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server", stderr=subprocess.PIPE, shell=True)
             client.join()
             inference_times = extract_time(inference)
             
             if configuration == "memory_only":
-                file_path = f"{tls_server_path}/inference_time_in_occlum_memory_only_aes.txt"
+                file_path = f"{server_with_tls_path}/inference_time_in_occlum_memory_only_aes.txt"
             else:
-                file_path = f"{tls_server_path}/inference_time_in_occlum_on_disk_aes.txt"
+                file_path = f"{server_with_tls_path}/inference_time_in_occlum_on_disk_aes.txt"
 
             with open(file_path, 'a') as file:
                 file.write(inference_times + "\n")            
         unique_id += 1
 
 def close_connection():
-    output = subprocess.Popen([f"{tls_server_path}/ssl_client quit"], stdout=subprocess.PIPE, shell=True)
+    output = subprocess.Popen([f"{server_with_tls_path}/ssl_client quit"], stdout=subprocess.PIPE, shell=True)
     output.wait()
 
-manage_connection()
+if __name__ == "__main__":
+    manage_connection()
+    os.chdir(previous_path)
