@@ -40,7 +40,7 @@ Two main plots and one table summarize the results:
 * Figure 5 in our paper: Performance evaluation across entire models and their partitions using **InferONNX-on Disk with SGX**.
 * Table 2 in our paper: Performance evaluation across **InferONNX-Memory only without SGX** and **InferONNX-on Disk without SGX**
 
-To generate the plots and the CSV file for the table, run the below command (where `partitions/` is the folder containing the existing partitions, and `3` is the number of runs for each model/partition):
+To generate the plots and the CSV file for the table, run the below command (where `partitions/` is the folder containing the existing partitions, and `3` is the number of runs for each model/partitions of model):
 ```
 python3 scripts/run_all.py partitions/ 3
 ```
@@ -51,7 +51,7 @@ The generated plots and CSV file will be saved in the `results/` directory.
 ### Automatic partitioning from scratch
 To generate the partitions from scratch, follow the steps below:
 
-### Step 1: Split each model into individual operators
+#### Step 1: Split each model into individual operators
 Run the following command to split each model into its individual operators:
 ```
 python3 scripts/partitioning/split_models_per_operator.py
@@ -62,7 +62,7 @@ For each model, inference is performed on the generated operators executed seque
 python3 scripts/partitioning/clean_operators.py
 ```
 
-### Step 2: Determine memory-intensive operators
+#### Step 2: Determine memory-intensive operators
 To identify *heavy-weight* (memory-intensive) operators for each model, we use the operator-level inference times collected during **Step 1** (stored in `<modelname>_operator_times.txt` inside `memory_intensive_ops/`).
 
 By comparing execution on SGX and CPU, we compute the overhead introduced by SGX. Operators with an overhead greater than 12× are flagged as memory-intensive and added to the list. Models without any such operators will not appear in the final list.
@@ -73,8 +73,8 @@ python3 scripts/partitioning/determine_memory_intensive_ops.py
 ```
 The list of memory-intensive operators for each model will be stored in the `memory_intensive_ops/operator_overhead.txt` file.
 
-### Step 3: Partition models
-Finally, the partitioning process begins from the **last operator** to the **first** (in reverse order from Step 1, which splits the model in the actual order&mdash;first to last). For each operator, if it is either:
+#### Step 3: Partition models
+Finally, the partitioning process begins from the **last operator** to the **first** (in reverse order from Step 1, where model is split from first to last). For each operator, if it is either:
 * identified as memory-intensive (from Step 2), or
 * exceeds the EPC capacity (85MB in our case),
 it is handled according to the strategy described in the paper.
@@ -83,4 +83,4 @@ To generate the new partitions, run:
 ```
 python3 scripts/partitioning/generate_partitions.py
 ```
-The resulting partitions will be saved in the `new_partitions/` folder within the corresponding model's directory. 
+Inference is then performed on the generated partitions to ensure that they match the inference of the entire model. The resulting partitions will be saved in the `new_partitions/` folder within the corresponding model's directory.
