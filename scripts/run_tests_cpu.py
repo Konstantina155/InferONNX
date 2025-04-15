@@ -5,23 +5,23 @@ import threading
 import time as tme
 import re
 
-if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "on_disk", "tls_memory_only"]:
-    print("Usage: python3 run_tests_cpu.py <memory_only/on_disk/tls_memory_only> <number_of_runs> <path_to_inferONNX> <path_to_occlum>")
+if len(sys.argv) != 4 or sys.argv[1] not in ["memory_only", "on_disk", "tls_memory_only"]:
+    print("Usage: python3 run_tests_cpu.py <memory_only/on_disk/tls_memory_only> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 try:
     num_runs = int(sys.argv[2])
 except ValueError:
-    print("Usage: python3 run_tests_cpu.py <memory_only/on_disk/tls_memory_only> <number_of_runs> <path_to_inferONNX> <path_to_occlum>")
+    print("Usage: python3 run_tests_cpu.py <memory_only/on_disk/tls_memory_only> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 configuration = sys.argv[1]
 inferONNX_path = sys.argv[3]
+path_to_occlum = inferONNX_path + "/.."
 server_with_tls_path = inferONNX_path + "/src/server_with_tls"
 server_without_tls_path = inferONNX_path + "/src/server_without_tls"
 tag_file_path = server_without_tls_path + "/tag_file.txt"
-path_to_occlum = sys.argv[4]
-path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
+path = ["mobilenetv2-7/"] #"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 path_models = [""] * len(path)
 
 previous_path = os.getcwd()
@@ -65,7 +65,7 @@ def init(use_aes):
         print(f"Error: {err.decode()}")
         exit(1)
         
-    os.chdir(f"{inferONNX_path}/scripts")
+    os.chdir(f"{inferONNX_path}/../")
 
 def extract_hex_numbers(text):
     text = text.decode('utf-8')
@@ -117,13 +117,14 @@ def client_side(path_model, unique_id):
             print(f"Error: {err.decode()}")
             exit(1)
         tag_file = ""
-    elif configuration == "tls_memory_only":
+    elif "aes" in configuration:
         extract_hex_numbers(time)
         tag_file = tag_file_path
     else:
         tag_file = ""
 
     command = client_command + " inputs 1 " + tag_file + " " + path_ + "test_data_set_0/input_0.pb"
+    print(command)
     output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
     (pred, err) = output.communicate()
     if err:
@@ -137,10 +138,11 @@ def thread_to_run_client(path_model, unique_id):
     client.start()
 
     if configuration == "tls_memory_only":
-        os.chdir(f"../{inferONNX_path}")
+        os.chdir(f"{path_to_occlum}/occlum_workspace/")
+        subprocess.run(f"{server_with_tls_path}/src/./server")
     else:
         os.chdir(f"{server_without_tls_path}/src")
-    subprocess.run("./server")
+        subprocess.run("./server")
     client.join()
 
 def manage_connection():
@@ -165,4 +167,16 @@ if __name__ == "__main__":
         init_server_client()
 
     manage_connection()
+
+    if configuration != "tls_memory_only":
+        os.chdir(server_without_tls_path)
+        os.system("make clean")
+        os.chdir(f"{server_without_tls_path}/src")
+        os.system("make clean")
+    else:
+        os.chdir(server_with_tls_path)
+        os.system("make clean")
+        os.chdir(f"{server_with_tls_path}/src")
+        os.system("make clean")
+
     os.chdir(previous_path)

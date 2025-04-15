@@ -32,8 +32,8 @@ char **
 add_path_to_names(char **names, int size_names)
 {
     assert(names);
-
-    const char *home_dir = "/hdd/papafrkon/InferONNX/scripts"; //getenv("HOME");
+    
+    const char *home_dir = "../../../../";
     if (!home_dir) {
         fprintf(stderr, "Error: HOME environment variable is not set\n");
         return NULL;

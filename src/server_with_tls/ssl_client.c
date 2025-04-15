@@ -427,8 +427,7 @@ send_request(char *client_request, size_t request_len, int mode)
     fprintf(stderr, "Loading the CA root certificate ...");
     fflush(stdout);
 
-    // TODO: make this ~/ later
-    ret = mbedtls_x509_crt_parse_file(&cacert, "/hdd/papafrkon/InferONNX/scripts/certificates/cert.pem");
+    ret = mbedtls_x509_crt_parse_file(&cacert, "../certificates/cert.pem");
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_x509_crt_parse_file returned %d\n", (unsigned int) - ret);
         goto exit;
@@ -604,28 +603,29 @@ send_request(char *client_request, size_t request_len, int mode)
     #ifdef USE_OCCLUM
         #if USE_MEMORY_ONLY == 1
             #if USE_STRIP == 1
-                    fd = fopen("../inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
             #else
-                fd = fopen("../inference_time_in_occlum_memory_only_aes.txt", "a");
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
             #endif
         #else
             #if USE_AES == 1
                 #if USE_STRIP == 1
-                    fd = fopen("../inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
                 #else   
-                    fd = fopen("../inference_time_in_occlum_on_disk_aes.txt", "a");
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
                 #endif
             #else
-                fd = fopen("../inference_time_in_occlum_on_disk_no_aes.txt", "a");
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
             #endif
         #endif
     #else
         #if USE_AES == 1
-            fd = fopen("../inference_time_outside_occlum_on_disk_aes.txt", "a");
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
         #else
-            fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
         #endif
     #endif
+
     if (!fd) {
         fprintf(stderr, "Error opening inference_time!\n");
         return;
@@ -817,28 +817,29 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 #ifdef USE_OCCLUM
     #if USE_MEMORY_ONLY == 1
         #if USE_STRIP == 1
-                fd = fopen("../inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
         #else
-            fd = fopen("../inference_time_in_occlum_memory_only_aes.txt", "a");
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
         #endif
     #else
         #if USE_AES == 1
             #if USE_STRIP == 1
-                fd = fopen("../inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
             #else
-                fd = fopen("../inference_time_in_occlum_on_disk_aes.txt", "a");
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
             #endif
         #else
-            fd = fopen("../inference_time_in_occlum_on_disk_no_aes.txt", "a");
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
         #endif
     #endif
 #else
     #if USE_AES == 1
-        fd = fopen("../inference_time_outside_occlum_on_disk_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
     #else
-        fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
     #endif
 #endif
+
     if (!fd) {
         fprintf(stderr, "Error opening inference_time!\n");
         return;

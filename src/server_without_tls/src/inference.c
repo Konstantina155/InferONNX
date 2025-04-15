@@ -430,7 +430,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         return NULL;
     }
 
-    FILE *fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
+    FILE *fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
     if (!fd) {
         fprintf(stderr, "\nError opening inference_time_cpu_memory_only_aes!\n");
         return NULL;

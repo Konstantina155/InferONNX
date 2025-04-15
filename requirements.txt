@@ -1,2 +1,4 @@
 onnx==1.17.0
-natsort==8.4.0
+numpy
+pandas
+matplotlib

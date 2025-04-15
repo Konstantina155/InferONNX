@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 if len(sys.argv) != 2:
-    print("Usage: python3 check_accuracy.py <partitions_name>")
+    print("Usage: python3 check_accuracy.py <partitions_folder>")
     exit(1)
 
 path = ["squeezenet1.0-7", "mobilenetv2-7", "densenet-7", "efficientnet-lite4-11", "inception-v3-12", "resnet101-v2-7", "resnet152-v2-7", "efficientnet-v2-l-18"]
