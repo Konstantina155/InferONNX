@@ -496,7 +496,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
 
-        fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
         if (!fd) {
             fprintf(stderr, "Error opening inference_time!\n");
             return NULL;
@@ -517,7 +517,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     int model_count = get_array_size((void **)m->names);
     fprintf(stderr, "Model count: %d\n", model_count);
 
-    fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+    fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
     if (!fd) {
         fprintf(stderr, "Error opening inference_time_outside_occlum_on_disk_no_aes!\n");
         return NULL;

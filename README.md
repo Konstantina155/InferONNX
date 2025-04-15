@@ -22,10 +22,24 @@ Before running InferONNX, ensure the following dependencies are met:
 * Python version: 3.8+
 * Other required Python packages (see `requirements.txt`)
 
-### Evaluation
-The evaluation primarily focuses on **latency** as the key performance metric.
-Two main plots summarize the results:
-* Figure 4 in the paper: Performance evaluation across **InferONNX-on Disk with SGX**, **InferONNX-Memory only with SGX** and **InferONNX-without SGX**.
-* Figure 5 in the paper: Performance evaluation across entire models and their partitions using **InferONNX-on Disk with SGX**.
+### Experiments
+The evaluation primarily focuses on **latency** and **accuracy** as the key performance metrics.
+> **Note** Before running any commands, ensure that you are at the root of the cloned repository.
 
-To ensure the accuracy of the model is preserved after partitioning, inference is performed on both the entire model and its partitions. 
+To ensure that model accuracy is preserved after partitioning, inference is performed on both the entire model and its partitions. To verify the accuracy of the partitions, run the below command:
+```
+python3 scripts/check_accuracy.py partitions/
+```
+
+Two main plots and one table summarize the results:
+* Figure 4 in our paper: Performance evaluation across **InferONNX-on Disk with SGX**, **InferONNX-Memory only with SGX** and **InferONNX-without SGX**.
+* Figure 5 in our paper: Performance evaluation across entire models and their partitions using **InferONNX-on Disk with SGX**.
+* Table 2 in our paper: Performance evaluation across **InferONNX-Memory only without SGX** and **InferONNX-on Disk without SGX**
+
+The partitions used in the evaluation are generated and stored in subdirectories under the `models/` folder. Each subdirectory is named after its correspoding model.
+
+To generate the plots and the CSV file for the table, run the below command:
+```
+python3 scripts/run_all.py partitions/
+```
+The generated plots and the CSV file will be saved in the results/ directory.

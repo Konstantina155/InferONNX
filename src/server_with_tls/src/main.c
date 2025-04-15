@@ -940,13 +940,13 @@ main(void)
      * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
      * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
      */
-    ret = mbedtls_x509_crt_parse_file(&srvcert, "/hdd/papafrkon/InferONNX/scripts/certificates/cert.pem");
+    ret = mbedtls_x509_crt_parse_file(&srvcert, "../certificates/cert.pem");
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_x509_crt_parse_file returned %d\n", ret);
         goto exit;
     }
 
-    ret =  mbedtls_pk_parse_keyfile(&pkey, "/hdd/papafrkon/InferONNX/scripts/certificates/key.pem", NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
+    ret =  mbedtls_pk_parse_keyfile(&pkey, "../certificates/key.pem", NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
 
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_pk_parse_keyfile returned %d\n", ret);
@@ -1224,9 +1224,9 @@ reset:
     if (strstr(response, "Inference:") != NULL) {
         FILE *fd = NULL;
 #ifdef USE_AES
-        fd = fopen("../inference_time_outside_occlum_on_disk_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
 #else
-        fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
 #endif
         if (!fd) {
             fprintf(stderr, "Error opening file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
