@@ -447,6 +447,7 @@ free_operator_node_output(operator_node *node, char **visited_nodes, int *visite
         free_operator_node_output(node->children[i], visited_nodes, visited_count);
     }
 
+    if (strcmp(node->model_name, "input") == 0) return;
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
             if (tract_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
@@ -915,8 +916,8 @@ main(int argc, char **argv)
     head->outputs = input_values;
 
     char **visited_nodes = NULL;
-    int visited_count = 0, runs = 1; // 10000 when cache-metrics is enabled
-    for (int i = 0; i < runs; i++) {
+    int visited_count = 0;
+    for (int i = 0; i < CACHE_STATS_RUNS; i++) {
         gettimeofday(&t1_inf, NULL);
         
         visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
@@ -932,15 +933,16 @@ main(int argc, char **argv)
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
         fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
 
-        visited_nodes = NULL;
-        /* Enable when cache-metrics
-         * visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
-         * visited_count = 0;
-         * free_operator_node_output(head, visited_nodes, &visited_count);
-         * visited_nodes[argc - 2] = NULL;
-         * free(visited_nodes);
-         * visited_nodes = NULL;
-        */
+        if (CACHE_STATS_RUNS > 1) {
+            fprintf(stderr, "Run: %d finished\n", i);
+            visited_nodes = NULL;
+            visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
+            visited_count = 0;
+            free_operator_node_output(head, visited_nodes, &visited_count);
+            visited_nodes[argc - 2] = NULL;
+            free(visited_nodes);
+            visited_nodes = NULL;
+        }
     }
 
     fprintf(stderr, "Total elapsed time: %f\n", elapsed_time);
