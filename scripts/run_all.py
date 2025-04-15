@@ -6,6 +6,7 @@ if len(sys.argv) != 3:
     exit(1)
 
 have_certificates = True
+number_of_runs = sys.argv[2]
 
 os.chdir("..")
 if not os.path.exists('occlum_workspace'):
@@ -18,7 +19,7 @@ os.chdir("occlum_workspace")
 
 if not have_certificates:
     os.system("occlum init")
-    os.system("mkdir image/bin/encrypted_models")
+    os.mkdir("image/bin/encrypted_models")
     os.system(f"openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout ../certificates/key.pem \
         -out ../certificates/cert.pem \
@@ -40,16 +41,22 @@ if not os.path.exists(tag_no_tls_server):
         f.write("")
 
 '''
-os.system(f"python3 {path_to_scripts}/run_tests_occlum.py on_disk entire {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/run_tests_occlum.py on_disk partitions {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/run_tests_occlum.py memory_only entire {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/run_tests_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/run_tests_cpu.py on_disk {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/run_tests_cpu.py memory_only {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_oclum.py on_disk entire {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_oclum.py on_disk partitions {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_oclum.py memory_only entire {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py on_disk {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only {number_of_runs} {inferONNX_path}")
 '''
+#os.system(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {sys.argv[1]} {number_of_runs}")
 
-os.system(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {sys.argv[1]} {sys.argv[2]}")
-# command to generate the two plots and the figure
+### measure inference time of each individual operator for each model
+if not os.path.exists(f"{inferONNX_path}/memory_intensive_ops"):
+    os.mkdir(f"{inferONNX_path}/memory_intensive_ops")
+
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only_operators 1 {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_oclum.py memory_only_operators entire 1 {inferONNX_path}")
+
 
 os.remove(tag_no_tls_server)
 os.remove(tag_tls_server)

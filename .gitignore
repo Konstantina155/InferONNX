@@ -1,4 +1,3 @@
-*.o
 **/.git
 results/
 src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt
