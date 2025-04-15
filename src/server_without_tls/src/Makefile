@@ -1,5 +1,6 @@
 USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
+USE_SYS_TIME_OPERATORS ?= 0
 
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
@@ -12,7 +13,12 @@ ifeq ($(USE_AES), 1)
     CFLAGS += -DUSE_AES
 	LDFLAGS += -I../tract_aes -L../tract_aes -ltract -lm -lpthread -ldl
 else
-	LDFLAGS += -I../tract_no_aes -L../tract_no_aes -ltract -lm -lpthread -ldl
+	LDFLAGS += -I../tract_no_aes -ltract -lm -lpthread -ldl
+	ifeq ($(USE_SYS_TIME_OPERATORS), 1)
+		LDFLAGS += -L../tract_no_aes/use_sys_time
+	else
+		LDFLAGS += -L../tract_no_aes/no_use_sys_time
+	endif
 endif
 
 all: server
