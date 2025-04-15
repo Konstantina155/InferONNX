@@ -10,3 +10,6 @@ This implementation does not use TLS, and therefore does not provide encrypted c
 
 #### USE_MEMORY_ONLY
 - Loads the model(s) into memory, avoiding disk storage.
+
+#### USE_SYS_TIME_OPERATORS
+- Calculates the inference time of each individual operator in the model.

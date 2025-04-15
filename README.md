@@ -51,36 +51,37 @@ The generated plots and CSV file will be saved in the `results/` directory.
 ### Automatic partitioning from scratch
 To generate the partitions from scratch, follow the steps below:
 
-#### Step 1: Split each model into individual operators
-Run the following command to split each model into its individual operators:
-```
-python3 scripts/partitioning/split_models_per_operator.py
-```
-For each model, inference is performed on the generated operators executed sequentially&mdash;each operator passes its output to the next. This ensures that the chained execution reproduces the output of the original unsplit model. The generated operators are stored in the `operators/` folder inside each model's directory.
-> **Note** In case you want to remove the 'operators/' folder from each model, run the following command:
-```
-python3 scripts/partitioning/clean_operators.py
-```
+* **Step 1: Split each model into individual operators**  
+  Run the following command to split each model into its individual operators:  
 
-#### Step 2: Determine memory-intensive operators
+      python3 scripts/partitioning/split_models_per_operator.py
+
+    For each model, inference is performed on the generated operators executed sequentially—each operator passes its output to the next. This ensures that the chained execution reproduces the output of the original unsplit model. The generated operators are stored in the `operators/` folder inside each model's directory.  
+  > **Note:** In case you want to remove the 'operators/' folder from each model, run the following command:
+
+      python3 scripts/partitioning/clean_operators.py
+
+
+* **Step 2: Determine memory-intensive operators**  
 To identify *heavy-weight* (memory-intensive) operators for each model, we use the operator-level inference times collected during **Step 1** (stored in `<modelname>_operator_times.txt` inside `memory_intensive_ops/`).
 
-By comparing execution on SGX and CPU, we compute the overhead introduced by SGX. Operators with an overhead greater than 12× are flagged as memory-intensive and added to the list. Models without any such operators will not appear in the final list.
+    By comparing execution on SGX and CPU, we compute the overhead introduced by SGX. Operators with an overhead greater than 12× are flagged as memory-intensive and added to the list. Models without any such operators will not appear in the final list.
 
-Run the following command to perform this analysis:
-```
-python3 scripts/partitioning/determine_memory_intensive_ops.py
-```
-The list of memory-intensive operators for each model will be stored in the `memory_intensive_ops/operator_overhead.txt` file.
+    Run the following command to perform this analysis:
 
-#### Step 3: Partition models
-Finally, the partitioning process begins from the **last operator** to the **first** (in reverse order from Step 1, where model is split from first to last). For each operator, if it is either:
-* identified as memory-intensive (from Step 2), or
-* exceeds the EPC capacity (85MB in our case),
-it is handled according to the strategy described in the paper.
+      python3 scripts/partitioning/determine_memory_intensive_ops.py
 
-To generate the new partitions, run:
-```
-python3 scripts/partitioning/generate_partitions.py
-```
-Inference is then performed on the generated partitions to ensure that they match the inference of the entire model. The resulting partitions will be saved in the `new_partitions/` folder within the corresponding model's directory.
+    The list of memory-intensive operators for each model will be stored in the `memory_intensive_ops/operator_overhead.txt` file.
+
+* **Step 3: Partition models**  
+Finally, the partitioning process begins from the **last operator** to the **first** (in reverse order from Step 1, where model is split from first to last). For each operator, if it is either:  
+  * identified as memory-intensive (from Step 2), or
+  * exceeds the EPC capacity (85MB in our case),
+  
+  it is handled according to the strategy described in the paper.
+
+  To generate the new partitions, run:
+
+      python3 scripts/partitioning/generate_partitions.py
+
+    Inference is then performed on the generated partitions to ensure that they match the inference of the entire model. The resulting partitions will be saved in the `new_partitions/` folder within the corresponding model's directory.
