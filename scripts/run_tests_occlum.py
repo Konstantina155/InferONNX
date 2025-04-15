@@ -7,23 +7,23 @@ import sys
 import re
 from natsort import natsorted
 
-if len(sys.argv) != 6 or sys.argv[1] not in ["memory_only", "on_disk"] or sys.argv[2] not in ["entire", "partitions"] or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-    print("Usage: python3 run_tests_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX> <path_to_occlum>")
+if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "on_disk"] or sys.argv[2] not in ["entire", "partitions"] or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+    print("Usage: python3 run_tests_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 try:
     num_runs = int(sys.argv[3])
 except ValueError:
-    print("Usage: python3 run_tests_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX> <path_to_occlum>")
+    print("Usage: python3 run_tests_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 configuration = sys.argv[1]
 entire_or_partition = sys.argv[2]
 inferONNX_path = sys.argv[4]
+path_to_occlum = inferONNX_path + "/.."
 server_with_tls_path = inferONNX_path + "/src/server_with_tls"
 tag_file_path = server_with_tls_path + "/tag_file.txt"
-path_to_occlum = sys.argv[5]
-path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
+path = ["mobilenetv2-7/"] #"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 if entire_or_partition == "partitions":
     path_models = ["partitions/"] * len(path)
 else:
@@ -70,6 +70,7 @@ def modify_occlum_json(user_space):
 
 def extract_hex_numbers(text):
     text = text.decode('utf-8')
+    print("Text: ", text)
     pattern = r"Message from server: \d+ ((?:[a-fA-F0-9]+\s*)+)\n Connection was closed gracefully"
     match = re.search(pattern, text)
     
@@ -184,4 +185,8 @@ def close_connection():
 
 if __name__ == "__main__":
     manage_connection()
+    os.chdir(server_with_tls_path)
+    os.system("make clean")
+    os.chdir(f"{server_with_tls_path}/src")
+    os.system("make clean")
     os.chdir(previous_path)

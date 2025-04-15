@@ -425,7 +425,7 @@ send_request(char *client_request, ssize_t request_len, int mode)
     gettimeofday(&t2, NULL);
     elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;
-    
+
     if (mode == 1) {
         FILE *fd = NULL;
 #ifdef USE_AES
@@ -437,6 +437,7 @@ send_request(char *client_request, ssize_t request_len, int mode)
         fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
     #endif
 #endif
+
         if (!fd) {
             fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
             return;
@@ -607,6 +608,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
     #endif
 #endif
+
     if (!fd) {
         fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
         return;
