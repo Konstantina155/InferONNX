@@ -34,8 +34,9 @@ To ensure that model accuracy is preserved after partitioning, inference is perf
 python3 scripts/check_accuracy.py partitions/
 ```
 
-### Main plot and table generation
+### Main plots and table generation
 Two main plots and one table summarize the results:
+* Figure 1 in our paper: Execution time breakdown for five popular ML models.
 * Figure 4 in our paper: Performance evaluation across **InferONNX-on Disk with SGX**, **InferONNX-Memory only with SGX** and **InferONNX-without SGX**.
 * Figure 5 in our paper: Performance evaluation across entire models and their partitions using **InferONNX-on Disk with SGX**.
 * Table 2 in our paper: Performance evaluation across **InferONNX-Memory only without SGX** and **InferONNX-on Disk without SGX**
@@ -47,6 +48,7 @@ python3 scripts/run_all.py partitions/ 3
 This command also measures the inference time of each operator for every model, which is later used to identify memory-intensive operators in the automatic partitioning process. The inference times are saved into the `memory_intensive_ops/` folder under the filename `<modelname>_operator_times.txt`.
 
 The generated plots and CSV file will be saved in the `results/` directory.
+> **Note** This script runs all models for each configuration (SGX and non-SGX), repeated according to the specified number of runs. It also collects per-operator inference times for each model, which are used later to identify memory-intensive operators. This process can be time-consuming depending on the number of runs.
 
 ### Automatic partitioning from scratch
 To generate the partitions from scratch, follow the steps below:
@@ -56,10 +58,7 @@ To generate the partitions from scratch, follow the steps below:
 
       python3 scripts/partitioning/split_models_per_operator.py
 
-    For each model, inference is performed on the generated operators executed sequentially—each operator passes its output to the next. This ensures that the chained execution reproduces the output of the original unsplit model. The generated operators are stored in the `operators/` folder inside each model's directory.  
-  > **Note:** In case you want to remove the 'operators/' folder from each model, run the following command:
-
-      python3 scripts/partitioning/clean_operators.py
+    For each model, inference is performed on the generated operators executed sequentially—each operator passes its output to the next. This ensures that the chained execution reproduces the output of the original unsplit model. The generated operators are stored in the `operators/` folder inside each model's directory.
 
 
 * **Step 2: Determine memory-intensive operators**  
@@ -85,3 +84,28 @@ Finally, the partitioning process begins from the **last operator** to the **fir
       python3 scripts/partitioning/generate_partitions.py
 
     Inference is then performed on the generated partitions to ensure that they match the inference of the entire model. The resulting partitions will be saved in the `new_partitions/` folder within the corresponding model's directory.
+
+    > **Note** These partitions differ from those in the paper, which were generated from first operator to last. The updated script traverses from last operator to first to handle complex models. This is a slow procedure and may take considerable time to complete.
+
+> **Note:** In case you want to remove the 'operators/' folder from each model, the , run the following command:
+
+      python3 scripts/partitioning/clean_necesssary_files.py
+
+### Benchmarks
+This section presents two key system-level benchmarks: IPC (Instructions Per Cycle) and memory usage using Valgrind’s Massif tool.
+
+**Table3 in our paper:** Instructions Per Cycle (IPC)
+To calculate the IPC for each model, run the following command:
+```
+python3 scripts/benchmarks/generate_cache_stats.py 10000
+```
+The resulting IPC values will be saved as a CSV file in the `results/` directory. 
+> **Note** A high number of runs can be time-consuming. For quicker results, consider reducing the number of runs.
+
+**Figure3 in our paper:** Memory requirements
+To evaluate memory usage, we use *Valgrind’s Massif tool* to trace heap memory consumption. To generate memory usage CDF plots, run:
+```
+python3 scripts/benchmarks/create_cdf.py partitions/
+```
+The output CDF plots for each model and its partitions will be saved in the `results/` directory.
+> **Note** The process can be time-consuming, as Valgrind’s Massif tool captures heap snapshots in real time throughout inference.

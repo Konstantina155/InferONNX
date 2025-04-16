@@ -442,10 +442,13 @@ send_request(char *client_request, ssize_t request_len, int mode)
             fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
             return;
         }
+
+#if USE_SYS_TIME_OPERATORS == 0
         if (fprintf(fd, "Total time - client: %f ms\n", elapsed_time) < 0) {
             fprintf(stderr, "Error writing to file\n");
             return;
         }
+#endif
         fclose(fd);
     }
 
@@ -613,7 +616,10 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
         return;
     }
+
+#ifndef USE_SYS_TIME_OPERATORS
     fprintf(fd, "\nModel: %s\n", req_original.names[0]);
+#endif
     fclose(fd); 
 
     send_request(buffer, bufLen, 0);

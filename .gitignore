@@ -1,8 +1,2 @@
 **/.git
 results/
-src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt
-src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt
-src/server_without_tls/inference_time_cpu_memory_only.txt
-src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt
-src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt
-src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt
