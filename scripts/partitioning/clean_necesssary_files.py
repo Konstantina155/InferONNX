@@ -4,3 +4,5 @@ model_directory = ["squeezenet1.0-7", "mobilenetv2-7", "efficientnet-lite4-11", 
 
 for model_dir in model_directory:
     os.system(f'rm -rf models/{model_dir}/operators/')
+
+os.system("rm -rf memory_intensive_ops/")

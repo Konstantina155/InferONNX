@@ -18,7 +18,7 @@ class Partition:
 
 EPC_SIZE = 85
 
-model_directory = ["squeezenet1.0-7", "mobilenetv2-7", "efficientnet-lite4-11", "resnet101-v2-7", "resnet152-v2-7", "densenet-7", "inception-v3-12", "efficientnet-v2-l-18"]
+model_directory = ["squeezenet1.0-7"]#, "mobilenetv2-7", "efficientnet-lite4-11", "resnet101-v2-7", "resnet152-v2-7", "densenet-7", "inception-v3-12", "efficientnet-v2-l-18"]
 path_to_models = "models/"
 
 ### HELPER FUNCTIONS ###
@@ -67,7 +67,7 @@ def heavy_operator_list():
     model_pattern = re.compile(r"Heaviest operators for (.*?):")
     operator_pattern = re.compile(r"^([\w/.-]+):")
 
-    with open("", "r") as file:
+    with open("memory_intensive_ops/operator_overhead.txt", "r") as file:
         for line in file:
             model_match = model_pattern.match(line)
             operator_match = operator_pattern.match(line)
@@ -82,7 +82,7 @@ def heavy_operator_list():
     return models
 
 def calc_peak_memory_usage(file, inputs):
-    command = f"python3 {path_to_benchmarks}/peak_memory_usage.py -f {os.path.basename(file)[:-5]}.out -m dummy_folder/ -i {inputs}"
+    command = f"python3 scripts/utils/peak_memory_usage.py -f {os.path.basename(file)[:-5]}.out -m dummy_folder/ -i {inputs}"
     output = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if "Error" in output.stderr.decode("utf-8"):
         print(output.stderr)
@@ -95,14 +95,14 @@ def calc_peak_memory_usage(file, inputs):
 
 ## find the input name -> '.pb' files
 def find_model_inputs_filename(file):
-    result = subprocess.run(f"python3 scripts/protobuf_write_file.py {file}", shell=True, check=True, stdout=subprocess.PIPE)
+    result = subprocess.run(f"python3 scripts/utils/protobuf_write_file.py {file}", shell=True, check=True, stdout=subprocess.PIPE)
     inputs_filename = " ".join(result.stdout.decode("utf-8").split("\n"))
     return inputs_filename
 
 def union_models(model_name, partition_obj, models_to_union):
     models_to_union_str = " ".join(models_to_union)
-    merged_model_name = f"partition_{model_name}/{model_name}_split{partition_obj.get_index()}.onnx"
-    command = f"python3 union_ONNX_files.py {models_to_union_str} {merged_model_name}"
+    merged_model_name = f"models/{model_name}/new_partitions/{model_name}_split{partition_obj.get_index()}.onnx"
+    command = f"python3 scripts/partitioning/union_ONNX_files.py {models_to_union_str} {merged_model_name}"
     print(f"Merging models from {models_to_union[0]} to {models_to_union[-1]} into {merged_model_name}")
     partition_obj.increment_index()
     os.system(command)
@@ -142,7 +142,7 @@ def clean_fill_inputs(fill_inputs, models_to_union, outputs, mode=None):
                 fill_inputs.remove(output)
 
 def not_union(partition_obj, operator, model_name):
-    os.system(f"cp {operator} partition_{model_name}/{model_name}_split{partition_obj.get_index()}.onnx")
+    os.system(f"cp {operator} models/{model_name}/new_partitions/{model_name}_split{partition_obj.get_index()}.onnx")
     partition_obj.increment_index()
 
 def find_input_names(operators):
@@ -362,10 +362,6 @@ def partition_model(heavy_ops_set, operators, model_name):
         os.system("mkdir dummy_folder")
     else:
         os.system(f"rm -rf dummy_folder/*")
-    if not os.path.exists(f"partition_{model_name}"):
-        os.system(f"mkdir partition_{model_name}")
-    else:
-        os.system(f"rm -rf partition_{model_name}/*")
 
     if model_name == "squeezenet1.0-7":
         total_memory_usage, small_model = check_if_partitioning_small(operators)
@@ -475,6 +471,8 @@ def partition_model(heavy_ops_set, operators, model_name):
         clean_fill_inputs(fill_inputs, models_to_union, outputs)
     print("Fill inputs: ", fill_inputs)
 
+    os.system("rm -rf dummy_folder/")
+
 def run_inference(directory, test_path):
     command = f"src/server_with_tls/scripts/./standalone_inference {directory} {test_path}"
     try:
@@ -522,6 +520,11 @@ def reverse_number(directory):
     print("\n")
 
 def main():        
+    previous_path = os.getcwd()
+    os.chdir('src/server_with_tls/scripts/')
+    os.system("make clean && make")
+    os.chdir(previous_path)
+
     heavy_operator_models = heavy_operator_list()
     for model, operators in heavy_operator_models.items():
         print(f"Model: {model}")
@@ -549,6 +552,10 @@ def main():
             print(f"Whole: {inference_whole}")
             exit(1)
         print()
+
+    os.chdir('src/server_with_tls/scripts/')
+    os.system("make clean")
+    os.chdir(previous_path)
 
 
 if __name__ == "__main__":

@@ -27,11 +27,11 @@ models = ["squeezenet1.0-7.onnx", "squeezenet1.0-7_split0.onnx", "mobilenetv2-7.
 model_names = ['SqueezeNet', 'MobileNet\nV2', 'DenseNet\n121', 'EfficientNet\nLite4', 'Inception\nV3', 'ResNet101\nV2',
                'ResNet152\nV2', 'EfficientNet\nV2']
 
-num_partitions = [2, 4, 2, 4, 2, 4, 2, 4]
-# for model in models:
-#     if "split" in model: continue
-#     result = subprocess.run(f'ls {inferONNX_path}/models/{model[:-5]}/{partitions_folder} | wc -w', shell=True, text=True, capture_output=True)
-#     num_partitions.append(int(result.stdout.strip()))
+num_partitions = []
+for model in models:
+    if "split" in model: continue
+    result = subprocess.run(f'ls {inferONNX_path}/models/{model[:-5]}/{partitions_folder} | wc -w', shell=True, text=True, capture_output=True)
+    num_partitions.append(int(result.stdout.strip()))
 
 files = [f"{inferONNX_path}/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt",
          f"{inferONNX_path}/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt",
@@ -222,6 +222,41 @@ def table_cpu_memory_vs_cpu_disk():
     df_result = pd.DataFrame(rows)
     df_result.to_csv(f'{inferONNX_path}/results/table2.csv', index=False)
 
+def plot_inference_time_breakdown():
+    df_sgx_disk = df_total[df_total['Configuration'] == 'SGX-on Disk']
+    inference = []
+    entire_inference = []
+    selected_models = ["mobilenetv2-7.onnx", "densenet-7.onnx", "inception-v3-12.onnx", "resnet152-v2-7.onnx", "efficientnet-v2-l-18.onnx"]
+    names = ['MobileNet\nV2', 'DenseNet121', 'Inception\nV3', 'ResNet152\nV2', 'EfficientNet\nV2'] 
+    for selected_model in selected_models:
+        data_sgx_disk = df_sgx_disk[df_sgx_disk['Model'] == selected_model[:-5]]
+        inference.append(data_sgx_disk['Run Model Time'].values[0])
+        entire_inference.append(data_sgx_disk['Inference Time'].values[0])
+    loading = np.array(entire_inference) - np.array(inference)
+
+
+    index_models = np.arange(len(selected_models))
+    width = 0.45
+    fig, ax = plt.subplots(figsize =(8, 4))
+    p1 = plt.bar(index_models, loading, width, color ='#3594CC', edgecolor ='black')
+    p2 = plt.bar(index_models, inference, width, color='#D31F11', edgecolor ='black', bottom = loading)
+
+    plt.subplots_adjust(right=0.95, top=0.9, left=0.14, bottom=0.15)
+    plt.ylabel('Execution time (ms)', fontsize=16)
+    plt.xticks(index_models, names, fontsize=14)
+    plt.yticks(fontsize=14)  
+    plt.legend((p1[0], p2[0]), ('Load and decrypt model', 'Inference process'), fontsize=17)
+
+    ax.spines['top'].set_linewidth(1)
+    ax.spines['right'].set_linewidth(1)
+    ax.spines['bottom'].set_linewidth(1)
+    ax.spines['left'].set_linewidth(1)
+    plt.tight_layout()
+
+    if not os.path.exists('results/'):
+        os.mkdir('results/')
+    plt.savefig('results/figure1.pdf', format='pdf')
+
 if __name__ == '__main__':
     df_total = pd.DataFrame(columns=['Configuration', 'Model', 'Run Model Time', 'Inference Time', 'Total Client Time'])
     index_df = 0
@@ -253,10 +288,12 @@ if __name__ == '__main__':
             index_config += 1
             index_df += 1
 
-    plot_whole_vs_partitions('#54a1a1', '#1f6f6f', 'SGX-on Disk', 'small') #blue -- paper
-    plot_whole_vs_partitions('#54a1a1', '#1f6f6f', 'SGX-on Disk', 'large') #blue -- paper
+    plot_whole_vs_partitions('#54a1a1', '#1f6f6f', 'SGX-on Disk', 'small') #blue
+    plot_whole_vs_partitions('#54a1a1', '#1f6f6f', 'SGX-on Disk', 'large') #blue
 
-    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper('small') #purple -- paper
-    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper('large') #purple -- paper
+    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper('small') #purple
+    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper('large') #purple
 
     table_cpu_memory_vs_cpu_disk()
+
+    plot_inference_time_breakdown()
