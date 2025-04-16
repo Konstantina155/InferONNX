@@ -2,3 +2,5 @@ onnx==1.17.0
 numpy
 pandas
 matplotlib
+seaborn
+Pillow

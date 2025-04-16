@@ -8,13 +8,13 @@ import re
 from natsort import natsorted
 
 if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or sys.argv[2] not in ["entire", "partitions"] or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-    print("Usage: python3 run_models_in_oclum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+    print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 try:
     num_runs = int(sys.argv[3])
 except ValueError:
-    print("Usage: python3 run_models_in_oclum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+    print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
 configuration = sys.argv[1]
@@ -23,12 +23,12 @@ inferONNX_path = sys.argv[4]
 path_to_occlum = inferONNX_path + "/.."
 server_with_tls_path = inferONNX_path + "/src/server_with_tls"
 tag_file_path = server_with_tls_path + "/tag_file.txt"
-path = ["squeezenet1.0-7/", "mobilenetv2-7/"] #"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
+path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 if entire_or_partition == "partitions":
     partition_folder = "partitions/"
 else:
     partition_folder = ""
-occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "700MB", "2GB", "2GB", "3GB"]
+occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
 
 previous_path = os.getcwd()
 print(previous_path)
@@ -97,7 +97,7 @@ def client_side(partition_folder, unique_id):
     print(f"\nCurrent directory: {current_dir}")
 
     path_ = inferONNX_path + "/models/" + path[unique_id]
-    tme.sleep(20)
+    tme.sleep(65)
 
     command = f"{server_with_tls_path}/ssl_client models " + path_ + "test_data_set_0/input_0.pb " + path_ + partition_folder
     print(command)

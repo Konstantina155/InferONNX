@@ -21,7 +21,7 @@ path_to_occlum = inferONNX_path + "/.."
 server_with_tls_path = inferONNX_path + "/src/server_with_tls"
 server_without_tls_path = inferONNX_path + "/src/server_without_tls"
 tag_file_path = server_without_tls_path + "/tag_file.txt"
-path = ["squeezenet1.0-7/", "mobilenetv2-7/"]#"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
+path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
 
 previous_path = os.getcwd()
 
