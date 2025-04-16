@@ -89,7 +89,7 @@ Finally, the partitioning process begins from the **last operator** to the **fir
 
 > **Note:** In case you want to remove the 'operators/' folder from each model, the , run the following command:
 
-      python3 scripts/partitioning/clean_necesssary_files.py
+    python3 scripts/partitioning/clean_necesssary_files.py
 
 ### Benchmarks
 This section presents two key system-level benchmarks: IPC (Instructions Per Cycle) and memory usage using Valgrind’s Massif tool.
