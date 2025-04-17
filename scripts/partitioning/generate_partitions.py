@@ -18,7 +18,7 @@ class Partition:
 
 EPC_SIZE = 85
 
-model_directory = ["squeezenet1.0-7"]#, "mobilenetv2-7", "efficientnet-lite4-11", "resnet101-v2-7", "resnet152-v2-7", "densenet-7", "inception-v3-12", "efficientnet-v2-l-18"]
+model_directory = ["squeezenet1.0-7", "mobilenetv2-7", "efficientnet-lite4-11", "resnet101-v2-7", "resnet152-v2-7", "densenet-7", "inception-v3-12", "efficientnet-v2-l-18"]
 path_to_models = "models/"
 
 ### HELPER FUNCTIONS ###
@@ -358,11 +358,6 @@ def partition_small_model(count_whole, operators, model_name, heavy_ops_set):
     print("Fill inputs: ", fill_inputs)
 
 def partition_model(heavy_ops_set, operators, model_name):
-    if not os.path.exists("dummy_folder"):
-        os.system("mkdir dummy_folder")
-    else:
-        os.system(f"rm -rf dummy_folder/*")
-
     if model_name == "squeezenet1.0-7":
         total_memory_usage, small_model = check_if_partitioning_small(operators)
         if small_model:
@@ -471,8 +466,6 @@ def partition_model(heavy_ops_set, operators, model_name):
         clean_fill_inputs(fill_inputs, models_to_union, outputs)
     print("Fill inputs: ", fill_inputs)
 
-    os.system("rm -rf dummy_folder/")
-
 def run_inference(directory, test_path):
     command = f"src/server_with_tls/scripts/./standalone_inference {directory} {test_path}"
     try:
@@ -525,6 +518,11 @@ def main():
     os.system("make clean && make")
     os.chdir(previous_path)
 
+    if not os.path.exists("dummy_folder"):
+        os.system("mkdir dummy_folder")
+    else:
+        os.system(f"rm -rf dummy_folder/*")
+
     heavy_operator_models = heavy_operator_list()
     for model, operators in heavy_operator_models.items():
         print(f"Model: {model}")
@@ -552,6 +550,8 @@ def main():
             print(f"Whole: {inference_whole}")
             exit(1)
         print()
+
+    os.system(f"rm -rf dummy_folder/")
 
     os.chdir('src/server_with_tls/scripts/')
     os.system("make clean")
