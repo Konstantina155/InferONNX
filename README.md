@@ -87,7 +87,7 @@ Finally, the partitioning process begins from the **last operator** to the **fir
 
     > **Note** These partitions differ from those in the paper, which were generated from first operator to last. The updated script traverses from last operator to first to handle complex models. This is a slow procedure and may take considerable time to complete.
 
-> **Note:** In case you want to remove the 'operators/' folder from each model, the , run the following command:
+> **Note:** In case you want to remove the 'operators/' folder from each model and the 'memory_intensive_ops/' folder, run the following command:
 
     python3 scripts/partitioning/clean_necesssary_files.py
 
