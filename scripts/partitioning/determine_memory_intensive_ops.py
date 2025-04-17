@@ -180,7 +180,6 @@ if __name__ == "__main__":
     for filename in os.listdir(directory):
         file = os.path.join(directory, filename)
         if os.path.isfile(file):
-            print(file)
             with open(file, 'r') as f:
                 file_content = f.read()
 
