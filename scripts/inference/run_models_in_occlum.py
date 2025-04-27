@@ -7,7 +7,7 @@ import sys
 import re
 from natsort import natsorted
 
-if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or sys.argv[2] not in ["entire", "partitions"] or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
     print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
     exit(1)
 
@@ -24,19 +24,14 @@ path_to_occlum = inferONNX_path + "/.."
 server_with_tls_path = inferONNX_path + "/src/server_with_tls"
 tag_file_path = server_with_tls_path + "/tag_file.txt"
 path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
-if entire_or_partition == "partitions":
-    partition_folder = "partitions/"
+if entire_or_partition != "":
+    partition_folder = entire_or_partition
 else:
     partition_folder = ""
 occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
 
 previous_path = os.getcwd()
 print(previous_path)
-
-def form_array_of_partitions_operators(path):
-    file_list = os.listdir(path)
-    onnx_files = [f for f in file_list if f.endswith('.onnx')]
-    return natsorted(onnx_files)
 
 def init_client(use_sys_time):
     use_sys_time_operators = 0
@@ -69,6 +64,7 @@ def modify_occlum_json(user_space):
     with open(file_path, 'r') as file:
         data = json.load(file)
     data['resource_limits']['user_space_size'] = user_space
+    data['resource_limits']['kernel_space_heap_size'] = "64MB"
     with open(file_path, 'w') as file:
         json.dump(data, file, indent=4)
     print(f"'user_space_size' updated to {data['resource_limits']['user_space_size']}")

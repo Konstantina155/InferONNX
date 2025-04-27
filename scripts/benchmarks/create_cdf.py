@@ -13,7 +13,7 @@ if len(sys.argv) != 2:
 
 associative_model_names = {
     'squeezenet1.0-7': 'SqueezeNet1.0',
-    'mobilenetv2_7': 'MobileNet V2',
+    'mobilenetv2-7': 'MobileNet V2',
     'densenet-7': 'DenseNet121',
     'efficientnet-lite4-11': 'EfficientNet Lite4',
     'inception-v3-12': 'Inception V3',
@@ -24,7 +24,7 @@ associative_model_names = {
 
 associative_model_names_partitions = {
     'squeezenet1.0-7_partitions': 'SqueezeNet1.0',
-    'mobilenetv2_7_partitions': 'MobileNet V2',
+    'mobilenetv2-7_partitions': 'MobileNet V2',
     'densenet-7_partitions': 'DenseNet121',
     'efficientnet-lite4-11_partitions': 'EfficientNet Lite4',
     'inception-v3-12_partitions': 'Inception V3',
@@ -99,18 +99,18 @@ if __name__ == "__main__":
     if not os.path.exists('results'):
         os.mkdir('results')
 
-    filename = 'scripts/benchmarks/memory_requirements_detailed_partitions.txt'
+    filename = 'scripts/benchmarks/memory_requirements_detailed.txt'
     if os.path.exists(filename):
         os.system(f'rm -f {filename}')
     os.system('python3 scripts/benchmarks/extract_ms_print_info.py')
-    create_cdf('scripts/benchmarks/memory_requirements_detailed.txt', 'results/figure3a')
+    create_cdf(filename, 'results/figure3a')
 
-    filename = 'scripts/benchmarks/memory_requirements_detailed_partitions.txt'
-    if os.path.exists(filename):
-        os.system(f'rm -f {filename}')
-    os.system('python3 scripts/benchmarks/extract_ms_print_info.py partitions/')
-    create_cdf('scripts/benchmarks/memory_requirements_detailed_partitions.txt', 'results/figure3b')
+    filename_partitions = 'scripts/benchmarks/memory_requirements_detailed_partitions.txt'
+    if os.path.exists(filename_partitions):
+        os.system(f'rm -f {filename_partitions}')
+    os.system(f'python3 scripts/benchmarks/extract_ms_print_info.py {sys.argv[1]}')
+    create_cdf(filename_partitions, 'results/figure3b')
         
-    os.remove('scripts/benchmarks/memory_requirements_detailed.txt')
-    os.remove('scripts/benchmarks/memory_requirements_detailed_partitions.txt')
+    os.remove(filename)
+    os.remove(filename_partitions)
     
