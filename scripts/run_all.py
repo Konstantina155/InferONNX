@@ -26,7 +26,7 @@ if not have_certificates:
         -days 365 \
         -subj \"/C=US/ST=CA/L=SanFrancisco/O=MyCompany/CN=localhost\"")
 
-os.system(f"cp ../certificates/* image/bin")
+    os.system(f"cp ../certificates/* image/bin")
 
 inferONNX_path = os.getcwd() + "/../InferONNX"
 path_to_scripts = inferONNX_path + "/scripts"
@@ -42,14 +42,13 @@ if not os.path.exists(tag_no_tls_server):
 
 
 os.system(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk entire {number_of_runs} {inferONNX_path}")
-os.system(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk partitions {number_of_runs} {inferONNX_path}")
+os.system(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk {sys.argv[1]} {number_of_runs} {inferONNX_path}")
 os.system(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire {number_of_runs} {inferONNX_path}")
 os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
 os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py on_disk {number_of_runs} {inferONNX_path}")
 os.system(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only {number_of_runs} {inferONNX_path}")
 
 os.system(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {sys.argv[1]} {number_of_runs}")
-
 
 
 ### measure inference time of each individual operator for each model
