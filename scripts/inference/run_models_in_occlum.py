@@ -5,59 +5,26 @@ import json
 import time as tme
 import sys
 import re
-from natsort import natsorted
 
-if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-    print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
-    exit(1)
+def run_command(cmd, cwd=None):
+    subprocess.run(cmd, shell=True, cwd=cwd, check=True)
 
-try:
-    num_runs = int(sys.argv[3])
-except ValueError:
-    print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
-    exit(1)
+def run_command_with_output(cmd, cwd=None):
+    output = subprocess.Popen(cmd, cwd=cwd, stderr=subprocess.PIPE, shell=True)
+    _, result_stderr = output.communicate()
+    return result_stderr.decode('utf-8')
 
-configuration = sys.argv[1]
-entire_or_partition = sys.argv[2]
-inferONNX_path = sys.argv[4]
-path_to_occlum = inferONNX_path + "/.."
-server_with_tls_path = inferONNX_path + "/src/server_with_tls"
-tag_file_path = server_with_tls_path + "/tag_file.txt"
-path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
-if entire_or_partition != "":
-    partition_folder = entire_or_partition
-else:
-    partition_folder = ""
-occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
-
-previous_path = os.getcwd()
-print(previous_path)
+def run_command_without_output(cmd, cwd=None):
+    process = subprocess.Popen(cmd, cwd=cwd, shell=True)
+    process.wait()
 
 def init_client(use_sys_time):
-    use_sys_time_operators = 0
-    if configuration == "memory_only":
-        use_memory_only = 1
-    elif configuration == "memory_only_operators":
-        use_memory_only = 1
-        use_sys_time_operators=1
-    else:
-        use_memory_only = 0
-    
-    command = f"make clean && make USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
-    os.chdir(server_with_tls_path)
-    output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
-    (pred, err) = output.communicate()
-    if err:
-        print(f"Error: {err.decode()}")
-        exit(1)
+    use_sys_time_operators = 1 if configuration == "memory_only_operators" else 0
+    use_memory_only = 0 if configuration == "on_disk" else 1
 
-    os.chdir(f"{server_with_tls_path}/src")
-    command = f"make clean && make USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators} occlum_server"
-    output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
-    (pred, err) = output.communicate()
-    if err:
-        print(f"Error: {err.decode()}")
-        exit(1)
+    build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
+    run_command_without_output(f"make clean && make {build_flags} occlum_server", cwd=f"{server_with_tls_path}/src")
+    run_command_without_output(f"make clean && make {build_flags}", cwd=server_with_tls_path)
 
 def modify_occlum_json(user_space):
     file_path = f'{path_to_occlum}/occlum_workspace/Occlum.json'
@@ -70,86 +37,51 @@ def modify_occlum_json(user_space):
     print(f"'user_space_size' updated to {data['resource_limits']['user_space_size']}")
 
 def extract_hex_numbers(text):
-    text = text.decode('utf-8')
-    print("Text: ", text)
     pattern = r"Message from server: \d+ ((?:[a-fA-F0-9]+\s*)+)\n Connection was closed gracefully"
     match = re.search(pattern, text)
     
     if match:
         hex_numbers = match.group(1).strip().split()
 
-        f = open(tag_file_path, 'w')
-        for hex_num in hex_numbers:
-            hex_number = hex_num.strip()
-            f.write(hex_number)
-            f.write('\n')
-        f.close()
+        with open(tag_file_path, 'w') as f:
+            f.write("\n".join(hex_numbers))
     else:
         print("No hex numbers found.")
     
 def client_side(partition_folder, unique_id):
-    os.chdir(f"{path_to_occlum}/occlum_workspace")
-    current_dir = os.getcwd()
-    print(f"\nCurrent directory: {current_dir}")
-
-    path_ = inferONNX_path + "/models/" + path[unique_id]
     tme.sleep(65)
 
-    command = f"{server_with_tls_path}/ssl_client models " + path_ + "test_data_set_0/input_0.pb " + path_ + partition_folder
-    print(command)
-    output = subprocess.Popen([command], stderr=subprocess.PIPE, shell=True)
-    _, time = output.communicate()
-    if not time:
-        print(f"Error: {time.decode()}")
+    print(f"\nCurrent directory: {os.getcwd()}")
+
+    path_ = f"{inferONNX_path}/models/{path[unique_id]}"
     
-    if "disk" in configuration:
-        extract_hex_numbers(time)
+
+    command = f"{server_with_tls_path}/ssl_client models {path_}test_data_set_0/input_0.pb {path_}{partition_folder}"
+    result = run_command_with_output(command)
+
+    if configuration == "on_disk":
+        extract_hex_numbers(result)
         tag_file = tag_file_path
     else:
         tag_file = ""
 
-    command = f"{server_with_tls_path}/ssl_client inputs 1 " + tag_file + " " + path_ + "test_data_set_0/input_0.pb"
-    print(command)
-    output = subprocess.Popen([command], stdout=subprocess.PIPE, shell=True)
-    (pred, err) = output.communicate()
-    if err:
-        print(f"Error: {err.decode()}")
-        exit(1)
+    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {path_}test_data_set_0/input_0.pb"
+    run_command_without_output(command)
     close_connection()
 
 def extract_time(text):
-    text = text.stderr.decode('utf-8')
-    print("Text before extraction:")
-    print(text)
-    print("End of text before extraction.")
-
-    start_model_index = end_model_index = start_index = closing_line_index = -1
     lines = text.splitlines()
-    for i in range(len(lines)):
-        line = lines[i]
-        if line.startswith("Model name:"):
-            start_model_index = i
-            break
-
-    if start_model_index is None:
-        raise ValueError("No 'Model name:' line found that matches the conditions.")
+    start_model_index = next((i for i, line in enumerate(lines) if line.startswith("Model name:")), -1)
+    if start_model_index == -1:
+        raise ValueError("No 'Model name:' line found.")
 
     lines_inference = lines[start_model_index:]
-    start_model_index = -1
-    for i, line in enumerate(lines_inference):
-        if line.startswith("Model name:"):
-            if start_model_index == -1:
-                start_model_index = i
-            lines_inference.remove(line)
-        if line.startswith("Write to client:"):
-            end_model_index = i
-        elif line.startswith("Response:"):
-            start_index = i + 1
-        elif line.startswith("Closing the connection..."):
-            closing_line_index = i
+    lines_inference = [line for line in lines_inference if not line.startswith("Model name:")]
+    end_model_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Write to client:")), len(lines_inference))
+    start_index = next((i + 1 for i, line in enumerate(lines_inference) if line.startswith("Response:")), len(lines_inference))
+    closing_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Closing the connection...")), len(lines_inference))
 
-    extracted_lines = lines_inference[start_model_index:end_model_index] + lines_inference[start_index:closing_line_index]
-    return "\n".join(extracted_lines)
+    return "\n".join(lines_inference[:end_model_index] + lines_inference[start_index:closing_index])
 
 def manage_connection():
     unique_id = 0
@@ -167,9 +99,9 @@ def manage_connection():
 
             command = f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server"
             if configuration == "memory_only_operators":
-                command += f">> {inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt"
+                command += f" >> {inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt"
 
-            load_models = subprocess.run(command, shell=True)
+            run_command(command, cwd=f"{path_to_occlum}/occlum_workspace")
             client.join()
 
             if configuration == "memory_only_operators":
@@ -179,9 +111,10 @@ def manage_connection():
             client = threading.Thread(args=(partition_folder, unique_id),target=client_side)
             client.start()
 
-            inference = subprocess.run(f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server", stderr=subprocess.PIPE, shell=True)
+            command = f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server"
+            result = run_command_with_output(command, cwd=f"{path_to_occlum}/occlum_workspace")
             client.join()
-            inference_times = extract_time(inference)
+            inference_times = extract_time(result)
             
             if configuration == "memory_only":
                 file_path = f"{server_with_tls_path}/inference_time_in_occlum_memory_only_aes.txt"
@@ -196,10 +129,40 @@ def close_connection():
     output = subprocess.Popen([f"{server_with_tls_path}/ssl_client quit"], stdout=subprocess.PIPE, shell=True)
     output.wait()
 
-if __name__ == "__main__":
+def main():
+    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+        exit(1)
+
+    global configuration, entire_or_partition, num_runs, inferONNX_path
+    configuration = sys.argv[1]
+    entire_or_partition = sys.argv[2]
+    num_runs = int(sys.argv[3])
+    inferONNX_path = sys.argv[4]
+
+    if inferONNX_path == "./":
+        inferONNX_path = os.getcwd()
+
+    global path_to_occlum, server_with_tls_path, tag_file_path
+    path_to_occlum = os.path.join(inferONNX_path, "..")
+    server_with_tls_path = os.path.join(inferONNX_path, "src/server_with_tls")
+    tag_file_path = os.path.join(server_with_tls_path, "tag_file.txt")
+    global path
+    path = [
+        "squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
+        "efficientnet-lite4-11/", "inception-v3-12/", 
+        "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
+    ]
+
+    global partition_folder, occlum_user_space
+    partition_folder = entire_or_partition if "partitions" in entire_or_partition else ""
+    occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
+
+
     manage_connection()
-    os.chdir(server_with_tls_path)
-    os.system("make clean")
-    os.chdir(f"{server_with_tls_path}/src")
-    os.system("make clean")
-    os.chdir(previous_path)
+    run_command_without_output("make clean", cwd=server_with_tls_path)
+    run_command_without_output("make clean", cwd=f"{server_with_tls_path}/src")
+
+
+if __name__ == "__main__":
+    main()

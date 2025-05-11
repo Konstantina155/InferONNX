@@ -429,12 +429,12 @@ send_request(char *client_request, ssize_t request_len, int mode)
     if (mode == 1) {
         FILE *fd = NULL;
 #ifdef USE_AES
-        fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
 #else
     #ifdef USE_MEMORY_ONLY
-        fd = fopen("../inference_time_cpu_memory_only_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
     #else
-        fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
     #endif
 #endif
 
@@ -603,12 +603,12 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 
     FILE *fd = NULL;
 #ifdef USE_AES
-    fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
+    fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
 #else
     #ifdef USE_MEMORY_ONLY
-        fd = fopen("../inference_time_cpu_memory_only_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
     #else
-        fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
     #endif
 #endif
 

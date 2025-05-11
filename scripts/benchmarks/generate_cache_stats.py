@@ -3,86 +3,88 @@ import os
 import sys
 import subprocess
 import pandas as pd
+from statistics import mean
 
-if len(sys.argv) != 2:
-    print("Usage: python3 generate_cache_stats.py <number_of_runs>")
-    exit(1)
+MODEL_DIRS = [
+    "squeezenet1.0-7", "mobilenetv2-7", "densenet-7", "efficientnet-lite4-11",
+    "inception-v3-12", "resnet101-v2-7", "resnet152-v2-7", "efficientnet-v2-l-18"
+]
 
-number_of_runs = int(sys.argv[1])
-path = ["squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", "efficientnet-lite4-11/", "inception-v3-12/", "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"]
-average = {'cycles': [], 'instructions': [], 'IPC': []}
+MODEL_NAMES = [
+    "SqueezeNet 1.0", "MobileNet V2", "DenseNet121", "EfficientNet Lite4",
+    "Inception V3", "ResNet101 V2", "ResNet152 V2", "EfficientNet V2"
+]
 
-def generate_stats():
-    for i in range(len(path)):
-        current_cache_info = {'cycles': [], 'instructions': []}
-        for j in range(number_of_runs):
-            record_command = f"sudo perf record -e cycles,instructions ./standalone_inference ../../../models/{path[i]} ../../../models/{path[i]}test_data_set_0/input_0.pb"
-            print(record_command)
-            output = subprocess.run(record_command, shell=True)
-            if output.returncode != 0:
-                print("Error: perf record failed.")
-                exit(1)
+def extract_event_count(label, text):
+    match = re.search(rf"of event '{label}'\n# Event count \(approx\.\): (\d+)", text)
+    if not match:
+        raise RuntimeError(f"Event count for '{label}' not found.")
+    return int(match.group(1))
 
-            report_command = "sudo perf report --stdio"
-            report_process = subprocess.Popen(report_command, shell=True, stdout=subprocess.PIPE)
-            (analysis, err) = report_process.communicate()
-            if err:
-                print(f"Error: {err}")
-                exit(1)
+def run_command(cmd):
+    subprocess.run(cmd, check=True, shell=True)
 
-            analysis = analysis.decode('utf-8')
+def run_perf_report(cmd):
+    result = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (analysis, err) = result.communicate()
+    if err:
+        print(f"Error: {err}")
+        exit(1)
 
-            match_cycles = re.search(r'of event \'cycles\'\n# Event count \(approx\.\): (\d+)', analysis)
-            if match_cycles:
-                cycles = int(match_cycles.group(1))
-            else:
-                print("Event count of match_cycles not found.")
-                exit(1)
+    return analysis.decode('utf-8')
 
-            match_instructions = re.search(r'of event \'instructions\'\n# Event count \(approx\.\): (\d+)', analysis)
-            if match_instructions:
-                instructions = int(match_instructions.group(1))
-            else:
-                print("Event count of match_instructions not found.")
-                exit(1)
+def collect_stats(num_runs):
+    stats = {'Model': [], 'IPC': []}
 
-            remove_command = subprocess.run("sudo rm perf.data", shell=True)
-            if remove_command.returncode != 0:
-                print("Error: perf.data not removed.")
-                exit(1)
+    for model_dir, model_name in zip(MODEL_DIRS, MODEL_NAMES):
+        cycles_list = []
+        instr_list = []
 
-            current_cache_info['cycles'].append(cycles)
-            current_cache_info['instructions'].append(instructions)
-        average['cycles'].append(int(sum(current_cache_info['cycles']) // number_of_runs))
-        average['instructions'].append(int(sum(current_cache_info['instructions']) // number_of_runs))
-        average['IPC'].append(average['instructions'][i] / average['cycles'][i])
-    return average
+        for _ in range(num_runs):
+            record_cmd = f"sudo perf record -e cycles,instructions ./standalone_inference ../../../models/{model_dir}/ ../../../models/{model_dir}/test_data_set_0/input_0.pb"
+            run_command(record_cmd)
 
-def generate_csv(average):
-    model_names = [
-        "SqueezeNet 1.0", "MobileNet V2", "DenseNet121", "EfficientNet Lite4", 
-        "Inception V3", "ResNet101 V2", "ResNet152 V2", "EfficientNet V2"
-    ]
+            report = run_perf_report("sudo perf report --stdio")
+            cycles = extract_event_count('cycles', report)
+            instr = extract_event_count('instructions', report)
+
+            cycles_list.append(cycles)
+            instr_list.append(instr)
+
+            os.remove("perf.data")
+
+        avg_cycles = mean(cycles_list)
+        avg_instr = mean(instr_list)
+        ipc = avg_instr / avg_cycles if avg_cycles else 0
+
+        stats['Model'].append(model_name)
+        stats['IPC'].append(f"{ipc:.2f}")
+
+    return stats
+
+def generate_csv(stats):
+    os.makedirs("results", exist_ok=True)
+    df = pd.DataFrame(stats)
+    df.to_csv("results/table3.csv", index=False)
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python3 generate_cache_stats.py <number_of_runs>")
+        exit(1)
+
+    number_of_runs = int(sys.argv[1])
+    original_dir = os.getcwd()
+    os.chdir(f"src/server_with_tls/scripts")
     
-    rows = []
-    for i in range(len(path)):
-        rows.append({
-            'Model': model_names[i],
-            'IPC': f"{average['IPC'][i]:.2f}"
-        })
+    try:
+        run_command("make clean")
+        run_command(f"make USE_CACHE_STATS={number_of_runs}")
+        stats = collect_stats(number_of_runs)
+        run_command("make clean")
+    finally:
+        os.chdir(original_dir)
 
-    df = pd.DataFrame(rows)
-    if not os.path.exists("results/"):
-        os.mkdir("results")
-    df.to_csv(f'results/table3.csv', index=False)
+    generate_csv(stats)
 
 if __name__ == "__main__":
-    current_path = os.getcwd()
-    os.chdir(f"src/server_with_tls/scripts")
-    os.system(f"make clean && make USE_CACHE_STATS={number_of_runs}")
-
-    average = generate_stats()
-    os.system(f"make clean")
-    os.chdir(current_path)
-
-    generate_csv(average)
+    main()

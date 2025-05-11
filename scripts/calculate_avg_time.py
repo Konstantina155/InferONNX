@@ -3,119 +3,116 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 
 def calculate_count(occurrence, runs):
-    if occurrence == 1:
-        count = 1
-    else:
-        count = (occurence - 1) * runs + 1
-    return count
+    return 1 if occurrence == 1 else (occurrence - 1) * runs + 1
 
-def parse_times(filename, model_name, num_partitions, runs, occurence):
+def extract_time(line, pattern):
+    match = re.search(pattern, line)
+    return float(match.group(1)) if match else None
+
+def parse_times(filename, model_name, num_partitions, runs, occurrence):
     inference_times = []
     run_model_times = []
     total_server_times = []
     total_client_times = []
-    partitions = [[] for _ in range(num_partitions)]
     network_times = []
     handshake = []
     handle_request = []
+    partitions = [[] for _ in range(num_partitions)]
 
-    count = calculate_count(occurence, runs)
-    count_all = 1
+    count = calculate_count(occurrence, runs)
+    model_match_index = 1
+    run_count = 0
 
     with open(filename, 'r') as file:
         lines = file.readlines()
-        count_runs = 0
-        for i in range(len(lines) - 1, -1, -1):
-            if f"Model: {model_name}\n" in lines[i]:
-                if count == count_all:
-                    if lines[i+5] == "\n":
-                        if "Inference time to run a model:" not in lines[i+1]:
-                            stats = 5
-                        else:
-                            continue
+
+    for i in reversed(range(len(lines))):
+        if f"Model: {model_name}\n" in lines[i]:
+            if count == model_match_index:
+                if lines[i+5] == "\n":
+                    if "Inference time to run a model:" not in lines[i+1]:
+                        stats = 5
                     else:
-                        stats = 9
-                    lines_below = lines[i:i+stats+1+num_partitions]
-                    k = 0
-                    
-                    for index in range(len(lines_below)):
-                        if num_partitions > 1 and re.search(rf"Partition_{k}: ([\d\.]+) ms", lines_below[index]) is not None:
-                            partition_time = float(re.search(rf"Partition_{k}: ([\d\.]+) ms", lines_below[index]).group(1))
-                            partitions[k].append(partition_time)
-                            k += 1
-                        if re.search(r"Inference time: ([\d\.]+) ms", lines_below[index]) is not None:
-                            inference_time = float(re.search(r"Inference time: ([\d\.]+) ms", lines_below[index]).group(1))
-                            inference_times.append(inference_time)
-                        if re.search(r"Inference time to run a model: ([\d\.]+) ms", lines_below[index]) is not None:
-                            run_model_time = float(re.search(r"Inference time to run a model: ([\d\.]+) ms", lines_below[index]).group(1))
-                            run_model_times.append(run_model_time)
-                        if re.search(r"Total time - server: ([\d\.]+) ms", lines_below[index]) is not None:
-                            total_server_time = float(re.search(r"Total time - server: ([\d\.]+) ms", lines_below[index]).group(1))
-                            total_server_times.append(total_server_time)
-                        if re.search(r"Total time - client: ([\d\.]+) ms", lines_below[index]) is not None:
-                            total_client_time = float(re.search(r"Total time - client: ([\d\.]+) ms", lines_below[index]).group(1))
-                            total_client_times.append(total_client_time)
-                            count_runs += 1
-                        if re.search(r"Time to read request from client: ([\d\.]+) ms", lines_below[index]) is not None:
-                            network_time = float(re.search(r"Time to read request from client: ([\d\.]+) ms", lines_below[index]).group(1))    
-                        if re.search(r"Time to write response to client: ([\d\.]+) ms", lines_below[index]) is not None:
-                            network_time += float(re.search(r"Time to write response to client: ([\d\.]+) ms", lines_below[index]).group(1))
-                            network_times.append(network_time)
-                        if re.search(r"Time to perform handshake: ([\d\.]+) ms", lines_below[index]) is not None:
-                            handshake_time = float(re.search(r"Time to perform handshake: ([\d\.]+) ms", lines_below[index]).group(1))
-                            handshake.append(handshake_time)
-                        if re.search(r"Time to process the request: ([\d\.]+) ms", lines_below[index]) is not None:
-                            handle_request_time = float(re.search(r"Time to process the request: ([\d\.]+) ms", lines_below[index]).group(1))
-                            handle_request.append(handle_request_time)
-                    if count_runs == runs:
-                        break
+                        continue
                 else:
-                    count_all += 1
-        if count_runs != runs:
-            return [0], [0], [0], [0], [0], [0], [0], [[0] for _ in range(num_partitions)]
-    return run_model_times, inference_times, total_server_times, total_client_times, network_times, handshake, handle_request, partitions
+                    stats = 9
+                
+                lines_below = lines[i:i+stats+1+num_partitions]
+                k = 0 
+                for line in lines_below:
+                    if num_partitions > 1 and f"Partition_{k}:" in line:
+                        time = extract_time(line, rf"Partition_{k}: ([\d\.]+) ms")
+                        if time is not None:
+                            partitions[k].append(time)
+                            k += 1
+                    if "Inference time:" in line:
+                        t = extract_time(line, r"Inference time: ([\d\.]+) ms")
+                        if t: inference_times.append(t)
+
+                    if "Inference time to run a model:" in line:
+                        t = extract_time(line, r"Inference time to run a model: ([\d\.]+) ms")
+                        if t: run_model_times.append(t)
+
+                    if "Total time - server:" in line:
+                        t = extract_time(line, r"Total time - server: ([\d\.]+) ms")
+                        if t: total_server_times.append(t)
+
+                    if "Total time - client:" in line:
+                        t = extract_time(line, r"Total time - client: ([\d\.]+) ms")
+                        if t: total_client_times.append(t); run_count += 1
+
+                    if "Time to read request from client:" in line:
+                        net = extract_time(line, r"Time to read request from client: ([\d\.]+) ms")
+
+                    if "Time to write response to client:" in line:
+                        net2 = extract_time(line, r"Time to write response to client: ([\d\.]+) ms")
+                        if net is not None and net2 is not None:
+                            network_times.append(net + net2)
+
+                    if "Time to perform handshake:" in line:
+                        t = extract_time(line, r"Time to perform handshake: ([\d\.]+) ms")
+                        if t: handshake.append(t)
+
+                    if "Time to process the request:" in line:
+                        t = extract_time(line, r"Time to process the request: ([\d\.]+) ms")
+                        if t: handle_request.append(t)
+                if run_count == runs:
+                    break
+            else:
+                model_match_index += 1
+    if run_count != runs:
+        return [], [], []
+    
+    return run_model_times, inference_times, total_client_times
 
 def calculate_average(times, runs):
-    return sum(times) / runs
+    return sum(times) / runs if runs else 0
 
 def convert_to_int(value):
-    return Decimal(value).quantize(0, ROUND_HALF_UP)
+    return int(Decimal(value).quantize(0, ROUND_HALF_UP))
 
 def convert_to_float(value):
-    return Decimal(value).quantize(Decimal('0.1'), ROUND_HALF_UP)
+    return float(Decimal(value).quantize(Decimal('0.1'), ROUND_HALF_UP))
 
-def print_results(run_model_times, inference_times, total_server_times, total_client_times, network_times, handshake, request_times, partitions):
-    handshake_time = convert_to_int(calculate_average(handshake, runs))
-    ssl_overhead = [0] * runs
-    rest = [0] * runs
-
-    if handshake_time == 0:
-        for i in range(runs):
-            rest[i] = convert_to_float(request_times[i]) - convert_to_float(inference_times[i])
-            ssl_overhead[i] = convert_to_float(total_client_times[i]) - convert_to_float(request_times[i])
-    else:
-        for i in range(runs):
-            rest[i] = convert_to_float(request_times[i]) - convert_to_float(inference_times[i])
-            ssl_overhead[i] = convert_to_float(total_client_times[i]) - convert_to_float(request_times[i]) - convert_to_float(handshake[i])
-            if ssl_overhead[i] < 0:
-                ssl_overhead[i] = 0
-
+def print_results(run_model_times, inference_times, total_client_times, runs):
     print(f"Average inference time to run a model: {convert_to_int(calculate_average(run_model_times, runs))} ms")
     print(f"Average inference time: {convert_to_int(calculate_average(inference_times, runs))} ms")
     print(f"Average total client time: {convert_to_int(calculate_average(total_client_times,runs))} ms")
 
-if __name__ == "__main__":
+def main():
     if len(sys.argv) != 6:
-        print("Usage: python3 calculate_avg_time.py <file_name> <model> <number_partitions> <runs> <occurence>\n")
+        print("Usage: python3 calculate_avg_time.py <file_name> <model> <number_partitions> <runs> <occurrence>\n")
         sys.exit(1)
 
     filename = sys.argv[1]
     model_name = sys.argv[2]
     number_partitions = int(sys.argv[3])
     runs = int(sys.argv[4])
-    occurence = int(sys.argv[5])
+    occurrence = int(sys.argv[5])
     
 
-    run_model_times, inference_times, total_server_times, total_client_times, network_times, handshake, request, partitions = parse_times(filename, model_name, number_partitions, runs, occurence)
-    print_results(run_model_times, inference_times, total_server_times, total_client_times, network_times, handshake, request, partitions)
+    run_model_times, inference_times, total_client_times = parse_times(filename, model_name, number_partitions, runs, occurrence)
+    print_results(run_model_times, inference_times, total_client_times, runs)
          
+if __name__ == "__main__":
+    main()
