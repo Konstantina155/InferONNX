@@ -1,8 +1,12 @@
-import os
+import subprocess
 
-model_directory = ["squeezenet1.0-7", "mobilenetv2-7", "efficientnet-lite4-11", "resnet101-v2-7", "resnet152-v2-7", "densenet-7", "inception-v3-12", "efficientnet-v2-l-18"]
+model_directory = [
+    "squeezenet1.0-7", "mobilenetv2-7", "efficientnet-lite4-11",
+    "resnet101-v2-7", "resnet152-v2-7", "densenet-7",
+    "inception-v3-12", "efficientnet-v2-l-18"
+]
 
 for model_dir in model_directory:
-    os.system(f'rm -rf models/{model_dir}/operators/')
+    subprocess.run(["rm", "-rf", f"models/{model_dir}/operators/"], check=True)
 
-os.system("rm -rf memory_intensive_ops/")
+subprocess.run(["rm", "-rf", "memory_intensive_ops/"], check=True)

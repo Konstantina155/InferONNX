@@ -131,95 +131,92 @@ def find_keys(config):
     
     return config
 
-def update_operator_times(one_config, other_config, model):
+def update_operator_times(config1, config2, model):
     if "_operators.txt" not in model:
-        other_list = list(other_config.keys())
-        other_config[other_list[1]] = other_config.get(other_list[1], 0) + other_config.pop(other_list[0])
+        keys2 = list(config2.keys())
+        config2[keys2[1]] = config2.get(keys2[1], 0) + config2.pop(keys2[0])
 
-    one_list = list(one_config.keys())
-    one_config[one_list[1]] = one_config.get(one_list[1], 0) + one_config.pop(one_list[0])          
+    keys1 = list(config1.keys())
+    config1[keys1[1]] = config1.get(keys1[1], 0) + config1.pop(keys1[0])          
 
     flag = False
     if model == "densenet_operators":
         flag = True
-    one_config = find_similar_keys(one_config, flag)
-    other_config = find_similar_keys(other_config, False)
+    config1 = find_similar_keys(config1, flag)
+    config2 = find_similar_keys(config2, False)
 
-    return one_config, other_config
+    return config1, config2
 
-def check_ops(first, second):    
-    if len(first) != len(second):
+def check_ops(s1, s2):    
+    if len(s1) != len(s2):
         print("Different number of operators")
         return False
     
-    all_operators = set(first.keys()).intersection(set(second.keys()))
+    all_operators = set(s1.keys()).intersection(set(s2.keys()))
 
     if not all_operators:
         print("No common operators found")
         return False
     return True
 
-def calculate_overhead(first, second):
-    all_operators = set(first.keys()).intersection(set(second.keys()))
+def calculate_overhead(s1, s2):
+    all_operators = set(s1.keys()).intersection(set(s2.keys()))
     overhead = {}
     for operator in all_operators:
-        time_in_first = first[operator]
-        time_in_second = second[operator]
-        overhead[operator] = (time_in_second - time_in_first) / time_in_first
+        time_in_s1 = s1[operator]
+        time_in_s2 = s2[operator]
+        overhead[operator] = (time_in_s2 - time_in_s1) / time_in_s1
     return overhead
  
 def heaviest_operators(overhead):
-    filtered_times = {k: v for k, v in overhead.items() if v > LIMIT}
-    sorted_times = sorted(filtered_times, key=lambda x: filtered_times[x], reverse=True)
-    return sorted_times
+    return sorted((k for k, v in overhead.items() if v > LIMIT), key=lambda k: overhead[k], reverse=True)
+
+def process_file(file_path, output_file):
+    with open(file_path, 'r') as f:
+        file_content = f.read()
+
+    is_op_file = "_operators.txt" in file_path
+    label = "SGX-Files" if is_op_file else "SGX"
+    split_sections = file_content.split(label)
+
+    systems = [
+        parse_execution_times(section) if idx == 0 else (
+            parse_execution_times_operators(section) if is_op_file else parse_execution_times(section)
+        )
+        for idx, section in enumerate(split_sections)
+    ]
+
+    s1 = {entry["operator"]: entry["total_time_ms"] for entry in systems[0]}
+    s2 = {entry["operator"]: entry["total_time_ms"] for entry in systems[1]}
+
+    if is_op_file:
+        s1 = find_keys(s1)
+        s2 = find_keys(s2)
+
+    s1, s2 = update_operator_times(s1, s2, file_path[:-4]) 
+
+    if not check_ops(s1, s2):
+        return
+
+    overhead = calculate_overhead(s1, s2)
+    heaviest = heaviest_operators(overhead)
+
+    with open(output_file, "a") as out:
+        if heaviest:
+            out.write(f"Heaviest operators for {os.path.basename(file_path).capitalize()[:-4]}:\n")
+        for op in heaviest:
+            if overhead[op] > LIMIT:
+                out.write(f"{op}: {overhead[op]:.2f}x\n")
+        out.write("\n")
+
+def main():
+    base_dir = 'memory_intensive_ops'
+    output_file = os.path.join(base_dir, 'operator_overhead.txt')
+
+    for file in os.listdir(base_dir):
+        path = os.path.join(base_dir, file)
+        if os.path.isfile(path):
+            process_file(path, output_file)
 
 if __name__ == "__main__":
-    directory = 'memory_intensive_ops'
-    output_file_path = directory + '/operator_overhead.txt'
-
-    for filename in os.listdir(directory):
-        file = os.path.join(directory, filename)
-        if os.path.isfile(file):
-            with open(file, 'r') as f:
-                file_content = f.read()
-
-            if "_operators.txt" in file:
-                func2 = parse_execution_times_operators
-                label = "SGX-Files"
-            else:
-                func2 = parse_execution_times
-                label = "SGX"
-            func1 = parse_execution_times
-            sections = file_content.split(label)
-
-            systems = []
-            for idx, section in enumerate(sections):
-                if idx == 0:
-                    exec = func1(section)
-                else:
-                    exec = func2(section)
-                systems.append(exec)
-            first = {entry["operator"]: entry["total_time_ms"] for entry in systems[0]}
-            second = {entry["operator"]: entry["total_time_ms"] for entry in systems[1]}
-
-            if "_operators.txt" in file:
-                first = find_keys(first)
-                second = find_keys(second)
-
-            first, second = update_operator_times(first, second, file[:-4]) 
-
-            if check_ops(first, second) == False:
-                exit(1)
-
-            if "_operators.txt" in file:
-                overhead = calculate_overhead(first, second)
-            else:
-                overhead = calculate_overhead(first, second)
-            heaviest = heaviest_operators(overhead)
-            with open(output_file_path, "a") as out_file:
-                if heaviest:
-                    out_file.write(f"Heaviest operators for {os.path.basename(file).capitalize()[:-4]}:\n")
-                for operator in heaviest:
-                    if overhead[operator] > LIMIT:
-                        out_file.write(f"{operator}: {overhead[operator]:.2f}x\n")
-                out_file.write("\n")
+    main()
