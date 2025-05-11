@@ -829,50 +829,90 @@ filter_dir(const char *dir_path, const char *name)
 }
 
 int
+process_directory(const char *path, char ***filenames)
+{
+    struct dirent **namelist;
+    int num_entries = scandir(path, &namelist, NULL, NULL);
+    if (num_entries == -1) {
+        perror("scandir");
+        return 0;
+    }
+
+    *filenames = malloc((num_entries - 1) * sizeof(char *));
+    if (!*filenames) {
+        perror("malloc");
+        return 0;
+    }
+
+    int num_models = 0;
+    for (int i = 0; i < num_entries; i++) {
+        if (filter_dir(path, namelist[i]->d_name) == 0) {
+            (*filenames)[num_models] = malloc(strlen(path) + strlen(namelist[i]->d_name) + 2);
+            if (!(*filenames)[num_models]) {
+                perror("malloc");
+                free(namelist);
+                return num_models;
+            }
+            strcpy((*filenames)[num_models], path);
+            strcat((*filenames)[num_models], "/");
+            strcat((*filenames)[num_models], namelist[i]->d_name);
+            num_models++;
+        }
+        free(namelist[i]);
+    }
+    free(namelist);
+
+    qsort(*filenames, num_models, sizeof(char *), version_compare);
+
+    for (int i = 0; i < num_models; i++) {
+        fprintf(stderr, "Sorted model: %s\n", (*filenames)[i]);
+    }
+    return num_models;
+}
+
+int
+process_file(const char *path, char ***filenames)
+{
+    *filenames = malloc(2 * sizeof(char *));
+    if (!*filenames) {
+        perror("malloc");
+        return 0;
+    }
+
+    (*filenames)[0] = strdup(path);
+    (*filenames)[1] = NULL;
+    fprintf(stderr, "Processing single ONNX file: %s\n", (*filenames)[0]);
+    return 1;
+}
+
+int
 main(int argc, char **argv)
 {
     struct timeval t1_inf, t2_inf;
     double elapsed_time;
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <path_to_dir> <input1.pb> ... <inputN.pb>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <path_to_dir/path_to_file> <input1.pb> ... <inputN.pb>\n", argv[0]);
         return 1;
     }
 
-    struct dirent **namelist;
-    int num_entries = 0, num_models = 0;
+    int num_models = 0;
     char **filenames = NULL;
+    const char *path_or_file = argv[1];
+    struct stat path_stat;
 
-    const char *path = argv[1];
-    num_entries = scandir(path, &namelist, NULL, NULL);
-
-    if (num_entries == -1) {
-        perror("scandir");
-        return 1;
-    }
-
-    filenames = malloc((num_entries - 1) * sizeof(char *));
-    if (!filenames) {
-        perror("malloc");
+    if (stat(path_or_file, &path_stat) != 0) {
+        perror("stat");
         return EXIT_FAILURE;
     }
 
-    for (int i = 0; i < num_entries; i++) {
-        if (filter_dir(path, namelist[i]->d_name) == 0) {
-            filenames[num_models] = malloc(strlen(path) + strlen(namelist[i]->d_name) + 1);
-            strcpy(filenames[num_models], path);
-            strcat(filenames[num_models], namelist[i]->d_name);
-            num_models++;
-        }
-        free(namelist[i]);
-    }
-    filenames[num_models] = NULL;
-    free(namelist);
-
-    qsort(filenames, num_models, sizeof(char *), version_compare);
-
-    for (int i = 0; i < num_models; i++) {
-        fprintf(stderr, "Sorted model: %s\n", filenames[i]);
+    if (S_ISDIR(path_stat.st_mode)) {
+        num_models = process_directory(path_or_file, &filenames);  
+    } else if (S_ISREG(path_stat.st_mode) && strstr(path_or_file, ".onnx") != NULL) {
+        num_models = process_file(path_or_file, &filenames);
+    } else {
+        fprintf(stderr, "The path is neither a valid directory nor an ONNX file.\n");
+        return EXIT_FAILURE;
     }
 
     TractValue **input_values = malloc((argc - 1) * sizeof(TractValue *));
