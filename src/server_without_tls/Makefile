@@ -1,3 +1,8 @@
+USE_SYS_TIME_OPERATORS ?= 0
+USE_AES ?= 0
+USE_MEMORY_ONLY ?= 0
+USE_DEBUG ?= 0
+
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
 LDFLAGS = -I./include -L./lib -lmbedtls -lmbedx509 -lmbedcrypto
@@ -16,6 +21,9 @@ else
     else
         LDFLAGS += -L./tract_no_aes/no_use_sys_time
     endif
+endif
+ifeq ($(USE_DEBUG), 1)
+	CFLAGS += -DUSE_DEBUG
 endif
 
 all: client
