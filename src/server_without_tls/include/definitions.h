@@ -35,12 +35,12 @@ typedef struct __attribute__((packed)) {
     int num_models;
     int num_inputs;
     char **names;
-    int *size_models;
+    uint64_t *size_models;
     uint8_t **models;
-    int* size_inputs;
+    uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
-    int tokenizer_size;
+    uint64_t tokenizer_size;
     uint8_t *tokenizer;
 } request;
 
@@ -88,6 +88,7 @@ typedef struct model
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
+    TractInferenceModel **inference_models;
     operator_node *head;
     struct model *next;
 } model;

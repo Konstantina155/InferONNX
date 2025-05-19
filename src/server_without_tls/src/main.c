@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <inference.h>
 
+#define CHUNK_SIZE (500L * 1024 * 1024)
+
 /* HELPER FUNCTIONS */
 static void
 free_array(void **array, int length)
@@ -144,7 +146,7 @@ save_model(char *name, unsigned char *model, size_t size_model)
 }
 
 void
-save_models_no_aes(char **names, int size_names, uint8_t **models, int *size_models)
+save_models_no_aes(char **names, int size_names, uint8_t **models, uint64_t *size_models)
 {
     assert(names);
     assert(models);
@@ -168,7 +170,7 @@ save_models_no_aes(char **names, int size_names, uint8_t **models, int *size_mod
 
 #ifdef USE_AES
 encrypted_models_info *
-encrypt_models(char **names, int size_names, unsigned char **models, int *size_models)
+encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *size_models)
 {
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
@@ -234,7 +236,43 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
     unsigned char *encrypted_model = NULL;
     size_t size_model = 0;
     for (int i = 0; i < size_names; ++i) {
+        fprintf(stderr, "Model: %s\n", names[i]);
         size_model = (size_t)size_models[i];
+
+        if (strstr(names[i], "model.onnx_data") != NULL) {
+            fprintf(stderr, "\nSave model.onnx_data");
+            if (!save_model(names[i], models[i], size_model)) {
+                fprintf(stderr, "Error saving model %s\n", names[i]);
+                goto exit_encr;
+            }
+
+            m->encrypted_model[i] = (unsigned char *)malloc(size_model * sizeof(unsigned char));
+            if (!m->encrypted_model[i]) {
+                fprintf(stderr, "Memory allocation for m->encrypted_model || m->tag[i] failed\n");
+                goto exit_encr;
+            }
+            memcpy(m->encrypted_model[i], models[i], size_model);
+
+            srand((unsigned int)time(NULL));
+            for (int i = 0; i < TAG_BYTES; i++) {
+                tag_encr[i] = rand() % 256;
+            }
+            memcpy(m->tag[i], tag_encr, TAG_BYTES);
+
+            fprintf(stderr, "Tag in tag_encr: ");
+            for (int j = 0; j < TAG_BYTES; ++j) {
+                fprintf(stderr, "%02x", tag_encr[j]);
+            }
+            fprintf(stderr, "\n");
+
+            fprintf(stderr, " Tag in m->tag: ");
+            for (int j = 0; j < TAG_BYTES; ++j) {
+                fprintf(stderr, "%02x", m->tag[i][j]);
+            }
+            fprintf(stderr, "\n");
+            continue;
+        }
+
         encrypted_model = (unsigned char *)malloc(size_model);
         if (!encrypted_model) {
             ret = 1;
@@ -344,7 +382,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
         }
         memcpy(m->encrypted_model[i], encrypted_model, size_model);
         memcpy(m->tag[i], tag_encr, TAG_BYTES);
-
+           
         if (!save_model(names[i], encrypted_model, size_model)) {
             fprintf(stderr, "Error saving model %s\n", names[i]);
             goto exit_encr;
@@ -414,11 +452,11 @@ deserialize_client_request(const char* buf, request* req)
             req->names = NULL;
         }
 
-        // Int* field -> size_models
+        // Uint64_t* field -> size_models
         if (size > 0) {
-            req->size_models = malloc(size * sizeof(int));
-            memcpy(req->size_models, buf + offset, size * sizeof(int));
-            offset += size * sizeof(int);
+            req->size_models = malloc(size * sizeof(uint64_t));
+            memcpy(req->size_models, buf + offset, size * sizeof(uint64_t));
+            offset += size * sizeof(uint64_t);
         } else {
             req->size_models = NULL;
         }
@@ -435,11 +473,11 @@ deserialize_client_request(const char* buf, request* req)
             req->models = NULL;
         }
 
-        // Int* field -> size_inputs
+        // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
-            req->size_inputs = malloc(num_inputs * sizeof(int));
-            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(int));
-            offset += num_inputs * sizeof(int);
+            req->size_inputs = malloc(num_inputs * sizeof(uint64_t));
+            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(uint64_t));
+            offset += num_inputs * sizeof(uint64_t);
         } else {
             req->size_inputs = NULL;
         }
@@ -449,7 +487,7 @@ deserialize_client_request(const char* buf, request* req)
             fprintf(stderr, "num_inputs: %d\n", num_inputs);
             req->input = malloc(num_inputs * sizeof(float *));
             for (int i = 0; i < num_inputs; ++i) {
-                fprintf(stderr, "input_size[%d]: %d\n", i, req->size_inputs[i]);
+                fprintf(stderr, "input_size[%d]: %ld\n", i, req->size_inputs[i]);
                 req->input[i] = malloc(req->size_inputs[i] * sizeof(float));
                 memcpy(req->input[i], buf + offset, req->size_inputs[i] * sizeof(float));
                 offset += req->size_inputs[i] * sizeof(float);
@@ -459,16 +497,16 @@ deserialize_client_request(const char* buf, request* req)
         }
         req->tags = NULL;
 
-        // Int field -> tokenizer_size
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(int));
-        offset += sizeof(int);
+        // Uint64_t field -> tokenizer_size
+        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
         req->tokenizer = NULL;
     } else {
-        // Int* field -> size_inputs
+        // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
-            req->size_inputs = malloc(num_inputs * sizeof(int));
-            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(int));
-            offset += num_inputs * sizeof(int);
+            req->size_inputs = malloc(num_inputs * sizeof(uint64_t));
+            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(uint64_t));
+            offset += num_inputs * sizeof(uint64_t);
         } else {
             req->size_inputs = NULL;
         }
@@ -478,7 +516,7 @@ deserialize_client_request(const char* buf, request* req)
             fprintf(stderr, "num_inputs: %d\n", num_inputs);
             req->input = malloc(num_inputs * sizeof(float *));
             for (int i = 0; i < num_inputs; ++i) {
-                fprintf(stderr, "input_size[%d]: %d\n", i, req->size_inputs[i]);
+                fprintf(stderr, "input_size[%d]: %ld\n", i, req->size_inputs[i]);
                 req->input[i] = malloc(req->size_inputs[i] * sizeof(float));
                 memcpy(req->input[i], buf + offset, req->size_inputs[i] * sizeof(float));
                 offset += req->size_inputs[i] * sizeof(float);
@@ -505,8 +543,8 @@ deserialize_client_request(const char* buf, request* req)
         req->models = NULL;
         req->num_models = 0;
 
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(int));
-        offset += sizeof(int);
+        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
 
         // Uint8_t* field -> tokenizer
         if (req->tokenizer_size > 0) {
@@ -569,12 +607,12 @@ handle_request(char *client_request, onnx_table *table)
     char **names = req_copy.names;
     uint8_t **models = req_copy.models;
     float **input = req_copy.input;
-    int *size_inputs = req_copy.size_inputs;
+    uint64_t *size_inputs = req_copy.size_inputs;
     int num_inputs = req_copy.num_inputs;
     int num_models = req_copy.num_models;
-    int *size_models = req_copy.size_models;
+    uint64_t *size_models = req_copy.size_models;
     unsigned char **tags = req_copy.tags;
-    int tokenizer_size = req_copy.tokenizer_size;
+    uint64_t tokenizer_size = req_copy.tokenizer_size;
     uint8_t* tokenizer = req_copy.tokenizer;
 
     int size = 0;
@@ -588,7 +626,7 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         } 
 
-        fprintf(stderr, "MODEL SIZE: %d\n", size_models[0]);
+        fprintf(stderr, "MODEL SIZE: %ld\n", size_models[0]);
 
         names = add_path_to_names(names, num_models);
 
@@ -635,39 +673,27 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
         m->inference_models = NULL;
         m->head = NULL;
+  
+        load_model_to_memory(&m, me->tag, num_models);
 
-        unsigned char **tags = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-        if (!tags) {
-            fprintf(stderr, "Memory allocation failed for tags in MODEL\n");
-            free_request(&req_copy);
-            free(client_request);
-            free_encrypted_models_info(me, num_models);
-            free(c_l->result);
-            return NULL;
-        }
+    #if USE_MEMORY_ONLY == 0
+        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
         for (int i = 0; i < num_models; ++i) {
-            tags[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
-            if (!tags[i]) {
-                fprintf(stderr, "Memory allocation failed for tags[i] in MODEL\n");
+            c_l->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
+            if (!c_l->tag[i]) {
+                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
                 free_request(&req_copy);
                 free(client_request);
                 free_encrypted_models_info(me, num_models);
                 free(c_l->result);
                 return NULL;
             }
-            memset(tags[i], 0, TAG_BYTES * 2 + 1);
-            for (int j = 0; j < TAG_BYTES; ++j) {
-                sprintf((char *)(tags[i] + j * 2), "%02x", me->tag[i][j]);
-            }
-            tags[i][TAG_BYTES * 2] = '\0';
+            memset(c_l->tag[i], 0, TAG_BYTES);
+            memcpy(c_l->tag[i], me->tag[i], TAG_BYTES);
+            
         }
-  
-        load_model_to_memory(&m, tags, num_models);
-        
-        for (int i = 0; i < num_models; ++i) {
-            free(tags[i]);
-        }
-        free(tags);
+        c_l->tag[num_models] = NULL;
+    #endif
 
         char *id_str = insert_into_table(table, m);
         if (!id_str) {
@@ -759,7 +785,7 @@ handle_request(char *client_request, onnx_table *table)
 #endif
 
         for (int i = 0; i < num_inputs; i++) {
-            fprintf(stderr, "INPUT SIZE[%d]: %d\n", i, size_inputs[i]);
+            fprintf(stderr, "INPUT SIZE[%d]: %ld\n", i, size_inputs[i]);
         }
 
         int required_size = snprintf(NULL, 0, "%d", id);
@@ -873,9 +899,8 @@ main()
 
     onnx_table *table = init_onnx_table(CAPACITY);
     char response[BUF_SIZE];
-    int request_size = 0;
     char *client_request = NULL;
-    size_t bytes_read, bytes_send = 0, bytes_received = 0;
+    size_t bytes_read, bytes_send = 0, request_size = 0;
 
     while (1) {
         /*
@@ -904,10 +929,10 @@ main()
             free(client_request);
             exit(EXIT_FAILURE);
         }
-        fprintf(stderr, "Bytes received: %ld\n Message from client: %d\n", bytes_read, request_size);
+        fprintf(stderr, "Bytes received: %ld\n Message from client: %ld\n", bytes_read, request_size);
 
 
-        if (request_size == 20) {
+        if (request_size == 24) {
             fprintf(stderr, "Client wants to close the connection...\n");
             free_onnx_table(table);
 
@@ -931,28 +956,47 @@ main()
             exit(EXIT_FAILURE);
         }
 
-        bytes_read = 0;
-        bytes_received = 0;
-        while ((int)bytes_read < request_size) {
-            bytes_received = read(admin, client_request + bytes_read, request_size - bytes_read);
-            if ((int)bytes_received < 0) {
-                if (errno == EINTR) {
-                    continue; // Interrupted, retry
-                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // No more data available, return bytes read so far
-                    break;
-                } else {
-                    perror("Read error");
-                    return -1;
-                }
-            } else if (bytes_received == 0) {
-                fprintf(stderr, "Connection closed by client\n");
-                free(client_request);
-                exit(EXIT_FAILURE);
-            }
-            bytes_read += bytes_received;
+        char *chunk_buffer = malloc(CHUNK_SIZE);
+        if (!chunk_buffer) {
+            perror("Memory allocation failed for chunk_buffer");
+            free(client_request);
+            exit(EXIT_FAILURE);
         }
+
+        bytes_read = 0;
+        while (bytes_read < request_size) {
+            size_t to_read = (request_size - bytes_read > CHUNK_SIZE) ? CHUNK_SIZE : (request_size - bytes_read);
+            size_t chunk_offset = 0;
+
+            while (chunk_offset < to_read) {
+                ssize_t bytes_received = read(admin, chunk_buffer + chunk_offset, to_read - chunk_offset);
+                if (bytes_received < 0) {
+                    if (errno == EINTR) {
+                        continue;
+                    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        break;
+                    } else {
+                        perror("Read error");
+                        free(client_request);
+                        free(chunk_buffer);
+                        return -1;
+                    }
+                } else if (bytes_received == 0) {
+                    fprintf(stderr, "Connection closed by client\n");
+                    free(client_request);
+                    free(chunk_buffer);
+                    exit(EXIT_FAILURE);
+                }
+                chunk_offset += bytes_received;
+            }
+
+            memcpy(client_request + bytes_read, chunk_buffer, to_read);
+            bytes_read += to_read;
+            fprintf(stderr, "Chunk received: %lu bytes, Total received: %lu bytes\n", to_read, bytes_read);
+        }
+
         client_request[request_size] = '\0';
+        free(chunk_buffer);
 
         fprintf(stderr, "Bytes received: %ld\n", bytes_read);
 
@@ -1018,16 +1062,17 @@ main()
         fprintf(stderr, "Bytes written: %ld\nResponse: %s\n", bytes_send, response);
 
         if (strstr(response, "Inference:") != NULL) {
-FILE *fd = NULL;
-#ifdef USE_AES
-            fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
-#else     
-        #ifdef USE_MEMORY_ONLY
-            fd = fopen("../inference_time_cpu_memory_only_no_aes.txt", "a");
-        #else
-            fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
-        #endif
-#endif
+#ifndef USE_DEBUG
+            FILE *fd = NULL;
+    #ifdef USE_AES
+                fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
+    #else     
+            #ifdef USE_MEMORY_ONLY
+                fd = fopen("../inference_time_cpu_memory_only_no_aes.txt", "a");
+            #else
+                fd = fopen("../inference_time_cpu_on_disk_no_aes.txt", "a");
+            #endif
+    #endif
             if (!fd) {
                 fprintf(stderr, "Error opening file inference_time_cpu_....txt\n");
                 exit(EXIT_FAILURE);
@@ -1053,6 +1098,12 @@ FILE *fd = NULL;
                 exit(EXIT_FAILURE);
             }
             fclose(fd);
+#else
+            fprintf(stderr, "Time to read request from client: %f ms\n", elapsed_time_read);
+            fprintf(stderr, "Time to write response to client: %f ms\n", elapsed_time_write);
+            fprintf(stderr, "Time to process the request: %f ms\n", elapsed_time_rest);
+            fprintf(stderr, "Total time - server: %f ms\n", elapsed_time);
+#endif
         }
 
         fprintf(stderr, "Closing the connection...");

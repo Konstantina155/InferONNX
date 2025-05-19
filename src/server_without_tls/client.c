@@ -24,6 +24,7 @@
 
 #define BUF_SIZE 4096
 #define TAG_SIZE 16
+#define CHUNK_SIZE (500L * 1024 * 1024)
 
 typedef struct __attribute__((packed)) {
     int command;
@@ -31,17 +32,17 @@ typedef struct __attribute__((packed)) {
     int num_models;
     int num_inputs;
     char **names;
-    int *size_models;
+    uint64_t *size_models;
     uint8_t **models;
-    int* size_inputs;
+    uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
-    int tokenizer_size;
+    uint64_t tokenizer_size;
     uint8_t *tokenizer;
 } request;
 
 /* HELPER FUNCTIONS */
-int
+uint64_t
 size_of_file(FILE *fd)
 {
     if (fseek(fd, 0, SEEK_END) != 0) {
@@ -56,7 +57,7 @@ size_of_file(FILE *fd)
         return -1;
     }
 
-    return (int)size;
+    return (uint64_t)size;
 }
 
 static
@@ -147,7 +148,7 @@ add_shape_to_array(float *image, size_t *shape)
 }
 
 static void *
-assign_into_array(FILE *fd, int size, int element_size)
+assign_into_array(FILE *fd, uint64_t size, uint64_t element_size)
 {
     void *data = malloc(size * element_size);
     if (!data) {
@@ -190,9 +191,9 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int* field
+    // Uint64_t* field
     if (req->size_models != NULL && size > 0) {
-        bytes += size * sizeof(int);
+        bytes += size * sizeof(uint64_t);
     }
 
     // Uint8_t** field
@@ -202,9 +203,9 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int* field
+    // Uint64_t* field
     if (req->size_inputs != NULL && num_inputs > 0) {
-        bytes += num_inputs * sizeof(int);
+        bytes += num_inputs * sizeof(uint64_t);
     }
 
     // Float** field
@@ -223,8 +224,8 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int field -> tokenizer_size
-    bytes += sizeof(int);
+    // Uint64_t field -> tokenizer_size
+    bytes += sizeof(uint64_t);
     
     // Uint8_t* tokenizer field
     if (req->tokenizer != NULL && req->tokenizer_size > 0) {
@@ -264,8 +265,8 @@ serialize_client_request(const request* req, ssize_t buffer_len)
 
     // Int* field -> size_models
     if (req->size_models != NULL && size > 0) {
-        memcpy(buffer + bytes, req->size_models, size * sizeof(int));
-        bytes += size * sizeof(int);
+        memcpy(buffer + bytes, req->size_models, size * sizeof(uint64_t));
+        bytes += size * sizeof(uint64_t);
     }
 
     // Uint8_t** field -> models
@@ -280,8 +281,8 @@ serialize_client_request(const request* req, ssize_t buffer_len)
 
     // Int* field -> size_inputs
     if (req->size_inputs != NULL && num_inputs > 0) {
-        memcpy(buffer + bytes, req->size_inputs, num_inputs * sizeof(int));
-        bytes += num_inputs * sizeof(int);
+        memcpy(buffer + bytes, req->size_inputs, num_inputs * sizeof(uint64_t));
+        bytes += num_inputs * sizeof(uint64_t);
     }
 
     // Float** field -> input
@@ -302,9 +303,9 @@ serialize_client_request(const request* req, ssize_t buffer_len)
         }
     }
 
-    // Int field -> tokenizer_size
-    memcpy(buffer + bytes, &req->tokenizer_size, sizeof(int));
-    bytes += sizeof(int);
+    // Uint64_t field -> tokenizer_size
+    memcpy(buffer + bytes, &req->tokenizer_size, sizeof(uint64_t));
+    bytes += sizeof(uint64_t);
 
     // Uint8_t* field -> tokenizer
     if (req->tokenizer != NULL && req->tokenizer_size > 0) {
@@ -388,12 +389,12 @@ send_request(char *client_request, ssize_t request_len, int mode)
     /*
      * 2. Write the GET request
      */
-    int total_written = 0;
+    uint64_t total_written = 0;
 
     fprintf(stderr, "\nWrite to server:");
 
-    int request_size = (int)request_len;
-    fprintf(stderr, "Request size: %ld, request_size (int): %d\n", request_len, request_size);
+    uint64_t request_size = (uint64_t)request_len;
+    fprintf(stderr, "Request size: %ld, request_size (int): %ld\n", request_len, request_size);
     
     gettimeofday(&t1, NULL);
 
@@ -401,19 +402,32 @@ send_request(char *client_request, ssize_t request_len, int mode)
         fprintf(stderr, "Error sending request size\n");
         return;
     }
-    fprintf(stderr, " %d bytes\n", total_written);
+    fprintf(stderr, " %ld bytes\n", total_written);
 
-    if ((total_written = send(client_fd, client_request, request_size, 0)) < 0) {
-        fprintf(stderr, "Error sending request\n");
-        return;
+    total_written = 0;
+    while (total_written < request_size) {
+        size_t to_send = (request_size - total_written > CHUNK_SIZE) ? CHUNK_SIZE : (request_size - total_written);
+        size_t sent_chunk = 0;
+
+        while (sent_chunk < to_send) {
+            ssize_t sent = send(client_fd, client_request + total_written + sent_chunk, to_send - sent_chunk, 0);
+            if (sent < 0) {
+                perror("Error sending chunk");
+                return;
+            }
+            sent_chunk += sent;
+        }
+
+        total_written += to_send;
+        fprintf(stderr, "Chunk sent: %lu bytes, Total sent: %lu bytes\n", to_send, total_written);
     }
 
-    fprintf(stderr, "Bytes written for message: %d\n\n", total_written);
+    fprintf(stderr, "Bytes written for message: %ld\n\n", total_written);
 
     /*
      * 7. Read the response
      */
-    fprintf(stderr, "Read from server:");
+    fprintf(stderr, "Read from server:\n");
 
     if ((bytes_read = read(client_fd, input, sizeof(input) - 1)) < 0) {
         fprintf(stderr, "Connection closed by server\n");
@@ -427,30 +441,36 @@ send_request(char *client_request, ssize_t request_len, int mode)
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
     if (mode == 1) {
+#ifndef USE_DEBUG
         FILE *fd = NULL;
-#ifdef USE_AES
-        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
-#else
-    #ifdef USE_MEMORY_ONLY
-        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
+    #ifdef USE_AES
+            fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
     #else
-        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
+        #ifdef USE_MEMORY_ONLY
+            fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
+        #else
+            fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
+        #endif
+    #endif
+
+            if (!fd) {
+                fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
+                return;
+            }
+
+    #if USE_SYS_TIME_OPERATORS == 0
+            if (fprintf(fd, "Total time - client: %f ms\n", elapsed_time) < 0) {
+                fprintf(stderr, "Error writing to file\n");
+                return;
+            }
+    #endif
+            fclose(fd);
+#else
+    #if USE_SYS_TIME_OPERATORS == 0
+            fprintf(stdout, "Total time - client: %f ms\n", elapsed_time);
     #endif
 #endif
-
-        if (!fd) {
-            fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
-            return;
         }
-
-#if USE_SYS_TIME_OPERATORS == 0
-        if (fprintf(fd, "Total time - client: %f ms\n", elapsed_time) < 0) {
-            fprintf(stderr, "Error writing to file\n");
-            return;
-        }
-#endif
-        fclose(fd);
-    }
 
     fprintf(stdout, " %ld bytes \nMessage from server: %s\n Connection was closed gracefully\n", bytes_read, input);
 
@@ -486,7 +506,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     size_t *temp_shape = NULL;
 
     int num_inputs = get_array_size((void **)input_files) - 1;
-    req_original.size_inputs = (int *)malloc(num_inputs * sizeof(int));
+    req_original.size_inputs = (uint64_t *)malloc(num_inputs * sizeof(uint64_t));
     assert(req_original.size_inputs);
 
     req_original.num_inputs = num_inputs;
@@ -545,7 +565,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 
     req_original.models = (uint8_t **) malloc((req_original.num_models + 1) * sizeof(uint8_t *));
     assert(req_original.models);
-    req_original.size_models = (int *) malloc(req_original.num_models * sizeof(int));
+    req_original.size_models = (uint64_t *) malloc(req_original.num_models * sizeof(uint64_t));
     assert(req_original.size_models);
     for (int i = 0; i < req_original.num_models; i++) {
         char full_path[1024];
@@ -587,6 +607,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
             free(req_original.models[i]);
             return;
         }
+        
         req_original.size_models[i] = size;
         fclose(fd);
     }
@@ -601,26 +622,32 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     char *buffer = serialize_client_request(&req_original, bufLen);
     buffer[bufLen] = '\0';
 
-    FILE *fd = NULL;
-#ifdef USE_AES
-    fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
-#else
-    #ifdef USE_MEMORY_ONLY
-        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
+#ifndef USE_DEBUG
+    FILE *fd = NULL;    
+    #ifdef USE_AES
+        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
     #else
-        fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
+        #ifdef USE_MEMORY_ONLY
+            fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt", "a");
+        #else
+            fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_on_disk_no_aes.txt", "a");
+        #endif
+    #endif
+
+        if (!fd) {
+            fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
+            return;
+        }
+
+    #ifndef USE_SYS_TIME_OPERATORS
+        fprintf(fd, "\nModel: %s\n", req_original.names[0]);
+    #endif
+        fclose(fd); 
+#else
+    #ifndef USE_SYS_TIME_OPERATORS
+        fprintf(stdout, "\nModel: %s\n", req_original.names[0]);
     #endif
 #endif
-
-    if (!fd) {
-        fprintf(stderr, "\nError opening inference_time_cpu_...!\n");
-        return;
-    }
-
-#ifndef USE_SYS_TIME_OPERATORS
-    fprintf(fd, "\nModel: %s\n", req_original.names[0]);
-#endif
-    fclose(fd); 
 
     send_request(buffer, bufLen, 0);
     
@@ -660,7 +687,7 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
     size_t *temp_shape = NULL;
 
     int num_inputs = get_array_size((void **)input_names);
-    req_original.size_inputs = (int *)malloc(num_inputs * sizeof(int));
+    req_original.size_inputs = (uint64_t *)malloc(num_inputs * sizeof(uint64_t));
     assert(req_original.size_inputs);
   
     req_original.num_inputs = num_inputs;
@@ -712,7 +739,6 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
             }
 
             req_original.size_inputs[i] = temp_calculated_shape;
-            fprintf(stderr, "Size of input: %d\n", req_original.size_inputs[i]);
 
             fclose(fd);
 
