@@ -158,6 +158,7 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
 
 enum TRACT_RESULT tract_load_nlp_model(const char *model_path,
                                        const EncryptionParameters *params,
+                                       const EncryptionParameters *params_weights,
                                        struct MyInferenceModel **inference_model);
 
 enum TRACT_RESULT tract_run_albert(const char *model_path,
@@ -180,6 +181,7 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           uintptr_t tokenizer_buffer_size,
                                           char **inference,
                                           const EncryptionParameters *params,
+                                          const EncryptionParameters *params_weights,
                                           uintptr_t num_tokens,
                                           struct MyInferenceModel **inference_model);
 

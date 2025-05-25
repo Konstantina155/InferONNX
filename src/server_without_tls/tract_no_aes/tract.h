@@ -156,9 +156,6 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
                                                 const char *path,
                                                 const struct TractModel *model);
 
-enum TRACT_RESULT tract_load_nlp_model(const char *model_path,
-                                       struct MyInferenceModel **inference_model);
-
 enum TRACT_RESULT tract_run_albert(const char *model_path,
                                    const uint8_t *tokenizer_buffer,
                                    uintptr_t tokenizer_buffer_size,
@@ -176,8 +173,7 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           const uint8_t *tokenizer_buffer,
                                           uintptr_t tokenizer_buffer_size,
                                           char **inference,
-                                          uintptr_t num_tokens,
-                                          struct MyInferenceModel **inference_model);
+                                          uintptr_t num_tokens);
 
 /**
  * Creates an instance of an ONNX framework and parser that can be used to load models.

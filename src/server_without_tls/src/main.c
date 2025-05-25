@@ -35,7 +35,7 @@ add_path_to_names(char **names, int size_names)
 {
     assert(names);
     
-    const char *home_dir = getenv("HOME");
+    const char *home_dir = "/hdd/papafrkon";
     if (!home_dir) {
         fprintf(stderr, "Error: HOME environment variable is not set\n");
         return NULL;
@@ -76,13 +76,8 @@ initialize_encrypted_models_info(int num_models)
     memset(m->IV, 0, IV_BYTES);
     memset(m->AAD, 0, ADD_DATA_BYTES);
     m->encrypted_model = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-    m->tag = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-    for (int i = 0; i < num_models; ++i) {
-        m->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
-        assert(m->tag[i]);
-        memset(m->tag[i], 0, TAG_BYTES);   
-    }
-
+    m->tags = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
+    assert(m->tags && m->encrypted_model);
     return m;
 }
 
@@ -107,10 +102,10 @@ free_encrypted_models_info(encrypted_models_info *m, int num_models)
     assert(m);
     for (int i = 0; i < num_models; ++i) {
         free(m->encrypted_model[i]);
-        free(m->tag[i]);
+        free(m->tags[i]);
     }
     free(m->encrypted_model);
-    free(m->tag);
+    free(m->tags);
     free(m);
 }
 
@@ -233,45 +228,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
     memcpy(m->IV, iv, IV_BYTES);
     memcpy(m->AAD, add_data, ADD_DATA_BYTES);
 
+
     unsigned char *encrypted_model = NULL;
     size_t size_model = 0;
     for (int i = 0; i < size_names; ++i) {
         fprintf(stderr, "Model: %s\n", names[i]);
         size_model = (size_t)size_models[i];
-
-        if (strstr(names[i], "model.onnx_data") != NULL) {
-            fprintf(stderr, "\nSave model.onnx_data");
-            if (!save_model(names[i], models[i], size_model)) {
-                fprintf(stderr, "Error saving model %s\n", names[i]);
-                goto exit_encr;
-            }
-
-            m->encrypted_model[i] = (unsigned char *)malloc(size_model * sizeof(unsigned char));
-            if (!m->encrypted_model[i]) {
-                fprintf(stderr, "Memory allocation for m->encrypted_model || m->tag[i] failed\n");
-                goto exit_encr;
-            }
-            memcpy(m->encrypted_model[i], models[i], size_model);
-
-            srand((unsigned int)time(NULL));
-            for (int i = 0; i < TAG_BYTES; i++) {
-                tag_encr[i] = rand() % 256;
-            }
-            memcpy(m->tag[i], tag_encr, TAG_BYTES);
-
-            fprintf(stderr, "Tag in tag_encr: ");
-            for (int j = 0; j < TAG_BYTES; ++j) {
-                fprintf(stderr, "%02x", tag_encr[j]);
-            }
-            fprintf(stderr, "\n");
-
-            fprintf(stderr, " Tag in m->tag: ");
-            for (int j = 0; j < TAG_BYTES; ++j) {
-                fprintf(stderr, "%02x", m->tag[i][j]);
-            }
-            fprintf(stderr, "\n");
-            continue;
-        }
 
         encrypted_model = (unsigned char *)malloc(size_model);
         if (!encrypted_model) {
@@ -284,9 +246,9 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
 
         // Initialize the GCM context with our key and desired cipher
         ret = mbedtls_gcm_setkey(&gcm,                      // GCM context to be initialized
-                                MBEDTLS_CIPHER_ID_AES,     // cipher to use (a 128-bit block cipher)
-                                key,                       // encryption key
-                                KEY_BITS);                 // key bits
+                                MBEDTLS_CIPHER_ID_AES,      // cipher to use (a 128-bit block cipher)
+                                key,                        // encryption key
+                                KEY_BITS);                  // key bits
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_setkey failed to set the key for AES cipher in encryption process - returned -0x%04x\n", -ret);
             goto exit_encr;
@@ -303,9 +265,9 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         }
 
         // Set additional authenticated data (AAD)
-        ret = mbedtls_gcm_update_ad(&gcm,              // GCM context
-                                    add_data,          // additional data
-                                    ADD_DATA_BYTES);   // length of AAD
+        ret = mbedtls_gcm_update_ad(&gcm,                // GCM context
+                                    add_data,            // additional data
+                                    ADD_DATA_BYTES);     // length of AAD
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_starts failed to set the AAD in the encryption process - returned -0x%04x\n", -ret);
             goto exit_encr;
@@ -368,20 +330,27 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
                                 NULL,            // input data, here NULL
                                 0,               // length of input data, here 0
                                 &olen,           // length of output data, here olen
-                                tag_encr,        // buffer for holding the tag
+                                tag_encr,      // buffer for holding the tag
                                 TAG_BYTES);      // length of the tag
+
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_finish failed to finish the encryption process and generate the tag - returned -0x%04x\n", -ret);
             goto exit_encr;
         }
 
+        m->tags[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
         m->encrypted_model[i] = (unsigned char *)malloc(size_model * sizeof(unsigned char));
-        if (!m->encrypted_model[i] || !m->tag[i]) {
-            fprintf(stderr, "Memory allocation for m->encrypted_model || m->tag[i] failed\n");
+        if (!m->encrypted_model[i] || !m->tags[i]) {
+            fprintf(stderr, "Memory allocation for m->encrypted_model || m->tags[i] failed\n");
             goto exit_encr;
         }
         memcpy(m->encrypted_model[i], encrypted_model, size_model);
-        memcpy(m->tag[i], tag_encr, TAG_BYTES);
+
+        memset(m->tags[i], 0, TAG_BYTES * 2 + 1);
+        for (int j = 0; j < TAG_BYTES; ++j) {
+            sprintf((char *)(m->tags[i] + j * 2), "%02x", tag_encr[j]);
+        }
+        m->tags[i][TAG_BYTES * 2] = '\0';
            
         if (!save_model(names[i], encrypted_model, size_model)) {
             fprintf(stderr, "Error saving model %s\n", names[i]);
@@ -392,12 +361,6 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         fprintf(stderr, "Tag in tag_encr: ");
         for (int j = 0; j < TAG_BYTES; ++j) {
             fprintf(stderr, "%02x", tag_encr[j]);
-        }
-        fprintf(stderr, "\n");
-
-        fprintf(stderr, " Tag in m->tag: ");
-        for (int j = 0; j < TAG_BYTES; ++j) {
-            fprintf(stderr, "%02x", m->tag[i][j]);
         }
         fprintf(stderr, "\n");
 
@@ -674,26 +637,7 @@ handle_request(char *client_request, onnx_table *table)
         m->inference_models = NULL;
         m->head = NULL;
   
-        load_model_to_memory(&m, me->tag, num_models);
-
-    #if USE_MEMORY_ONLY == 0
-        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
-        for (int i = 0; i < num_models; ++i) {
-            c_l->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
-            if (!c_l->tag[i]) {
-                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
-                free_request(&req_copy);
-                free(client_request);
-                free_encrypted_models_info(me, num_models);
-                free(c_l->result);
-                return NULL;
-            }
-            memset(c_l->tag[i], 0, TAG_BYTES);
-            memcpy(c_l->tag[i], me->tag[i], TAG_BYTES);
-            
-        }
-        c_l->tag[num_models] = NULL;
-    #endif
+        load_model_to_memory(&m, me->tags, num_models);
 
         char *id_str = insert_into_table(table, m);
         if (!id_str) {
@@ -715,6 +659,24 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         }
 
+    #if USE_MEMORY_ONLY == 0
+        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
+        for (int i = 0; i < num_models; ++i) {
+            c_l->tag[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
+            if (!c_l->tag[i]) {
+                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
+                free_request(&req_copy);
+                free(client_request);
+                free_encrypted_models_info(me, num_models);
+                free(c_l->result);
+                return NULL;
+            }
+            memcpy(c_l->tag[i], me->tags[i], TAG_BYTES * 2);
+            c_l->tag[i][TAG_BYTES * 2] = '\0';
+        }
+        c_l->tag[num_models] = NULL;
+    #endif
+
         memcpy(c_l->result, id_str, size);
         free_encrypted_models_info(me, num_models);
         c_l->size = size;
@@ -728,6 +690,7 @@ handle_request(char *client_request, onnx_table *table)
         memset(m->key, 0, KEY_BYTES);
         memset(m->IV, 0, IV_BYTES);
         memset(m->AAD, 0, ADD_DATA_BYTES);
+        m->inference_models = NULL;
 
         load_model_to_memory(&m);
 
@@ -1013,13 +976,10 @@ main()
             if (c_l->tag) {
                 for (size_t i = 0; c_l->tag[i] != NULL; ++i) {
                     response[current_position++] = ' '; // Add a space separator
-                    fprintf(stderr, "Tag: ");
-                    for (size_t j = 0; j < TAG_BYTES; ++j) {
-                        fprintf(stderr, "%02x", c_l->tag[i][j]);
-                        sprintf(response + current_position, "%02x", c_l->tag[i][j]);
-                        current_position += 2;
-                    }
-                    fprintf(stderr, "\n"); 
+                    fprintf(stderr, "Tag: %s", c_l->tag[i]);
+                    size_t tag_len = strlen((char *)c_l->tag[i]);
+                    memcpy(response + current_position, c_l->tag[i], tag_len);
+                    current_position += tag_len;
                     free(c_l->tag[i]);
                 }
                 free(c_l->tag);
