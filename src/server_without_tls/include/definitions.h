@@ -46,7 +46,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct encrypted_models_info
 {
-    unsigned char **encrypted_model;
+    unsigned char **encrypted_models;
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];

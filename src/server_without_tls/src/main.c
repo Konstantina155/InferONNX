@@ -75,9 +75,9 @@ initialize_encrypted_models_info(int num_models)
     memset(m->key, 0, KEY_BYTES);
     memset(m->IV, 0, IV_BYTES);
     memset(m->AAD, 0, ADD_DATA_BYTES);
-    m->encrypted_model = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
+    m->encrypted_models = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
     m->tags = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-    assert(m->tags && m->encrypted_model);
+    assert(m->tags && m->encrypted_models);
     return m;
 }
 
@@ -101,10 +101,10 @@ free_encrypted_models_info(encrypted_models_info *m, int num_models)
 {
     assert(m);
     for (int i = 0; i < num_models; ++i) {
-        free(m->encrypted_model[i]);
+        free(m->encrypted_models[i]);
         free(m->tags[i]);
     }
-    free(m->encrypted_model);
+    free(m->encrypted_models);
     free(m->tags);
     free(m);
 }
@@ -171,10 +171,8 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
     mbedtls_entropy_context entropy;
     mbedtls_gcm_context gcm;
 
-    unsigned char key[KEY_BYTES];
-    unsigned char iv[IV_BYTES];
-    unsigned char add_data[ADD_DATA_BYTES];
     unsigned char tag_encr[TAG_BYTES];
+    memset(tag_encr, 0, TAG_BYTES);
     size_t olen;
     int ret;
 
@@ -192,51 +190,27 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         goto exit_encr;
     }
 
-    memset(key, 0, KEY_BYTES);
-    memset(iv, 0, IV_BYTES);
-    memset(add_data, 0, ADD_DATA_BYTES);
-    memset(tag_encr, 0, TAG_BYTES);
-
-    // Generate random bytes for the key (32 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, key, KEY_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract key - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
-    // Generate random bytes for the IV (12 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, iv, IV_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract IV - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
-    // Generate random bytes for the add_data (64 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, add_data, ADD_DATA_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract add_data - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
     encrypted_models_info *m = initialize_encrypted_models_info(size_names);
     if (!m) {
         fprintf(stderr, "Memory allocation failed for encrypted_models_info\n");
         goto exit_encr;
     }
 
-    memcpy(m->key, key, KEY_BYTES);
-    memcpy(m->IV, iv, IV_BYTES);
-    memcpy(m->AAD, add_data, ADD_DATA_BYTES);
+    // Generate random key, IV, and AAD directly into struct
+    if ((ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->key, KEY_BYTES)) != 0 ||
+        (ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->IV, IV_BYTES)) != 0 ||
+        (ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->AAD, ADD_DATA_BYTES)) != 0) {
+        fprintf(stderr, "Random generation failed - returned -0x%04x\n", -ret);
+        goto exit_encr;
+    }
 
-
-    unsigned char *encrypted_model = NULL;
     size_t size_model = 0;
     for (int i = 0; i < size_names; ++i) {
         fprintf(stderr, "Model: %s\n", names[i]);
         size_model = (size_t)size_models[i];
 
-        encrypted_model = (unsigned char *)malloc(size_model);
-        if (!encrypted_model) {
+        m->encrypted_models[i] = (unsigned char *)malloc(size_model);
+        if (!m->encrypted_models[i]) {
             ret = 1;
             fprintf(stderr, "Memory allocation for encrypted model `%s` failed\n", names[i]);
             goto exit_encr;
@@ -247,7 +221,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         // Initialize the GCM context with our key and desired cipher
         ret = mbedtls_gcm_setkey(&gcm,                      // GCM context to be initialized
                                 MBEDTLS_CIPHER_ID_AES,      // cipher to use (a 128-bit block cipher)
-                                key,                        // encryption key
+                                m->key,                     // encryption key
                                 KEY_BITS);                  // key bits
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_setkey failed to set the key for AES cipher in encryption process - returned -0x%04x\n", -ret);
@@ -257,7 +231,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         // Start the GCM encryption process
         ret = mbedtls_gcm_starts(&gcm,                 // GCM context
                                 MBEDTLS_GCM_ENCRYPT,   // mode
-                                iv,                    // initialization vector
+                                m->IV,                 // initialization vector
                                 IV_BYTES);             // length of IV
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_starts failed to start the encryption process - returned -0x%04x\n", -ret);
@@ -266,7 +240,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
 
         // Set additional authenticated data (AAD)
         ret = mbedtls_gcm_update_ad(&gcm,                // GCM context
-                                    add_data,            // additional data
+                                    m->AAD,              // additional data
                                     ADD_DATA_BYTES);     // length of AAD
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_starts failed to set the AAD in the encryption process - returned -0x%04x\n", -ret);
@@ -277,12 +251,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
             size_t rest_len = size_model - 32;
 
             // Encrypt the first 32 bytes
-            ret = mbedtls_gcm_update(&gcm,               // GCM context
-                                    models[i],           // input data
-                                    32,                  // length of first 32 bytes of input data
-                                    encrypted_model,     // output of encryption process for the first 32 bytes
-                                    size_model,          // length of input data
-                                    &olen);              // length of output data (expected 32)
+            ret = mbedtls_gcm_update(&gcm,                    // GCM context
+                                    models[i],                // input data
+                                    32,                       // length of first 32 bytes of input data
+                                    m->encrypted_models[i],   // output of encryption process for the first 32 bytes
+                                    size_model,               // length of input data
+                                    &olen);                   // length of output data (expected 32)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the first 32 bytes of input data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -293,12 +267,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
             }
 
             // Encrypt the rest of the data
-            ret = mbedtls_gcm_update(&gcm,                     // GCM context
-                                    models[i] + 32,            // input data for the rest data
-                                    rest_len,                  // length of the rest data
-                                    encrypted_model + 32,      // output of encryption process for the rest data
-                                    size_model - 32,           // length of the rest data
-                                    &olen);                    // length of output data (expected rest_len)
+            ret = mbedtls_gcm_update(&gcm,                        // GCM context
+                                    models[i] + 32,               // input data for the rest data
+                                    rest_len,                     // length of the rest data
+                                    m->encrypted_models[i] + 32,  // output of encryption process for the rest data
+                                    size_model - 32,              // length of the rest data
+                                    &olen);                       // length of output data (expected rest_len)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the rest of the data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -309,12 +283,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
             }
         } else {
             // Encrypt the whole model
-            ret = mbedtls_gcm_update(&gcm,                // GCM context
-                                    models[i],            // input data
-                                    size_model,           // length of input data
-                                    encrypted_model,      // output of encryption process
-                                    size_model,           // length of input data
-                                    &olen);               // length of output data (expected size_model)
+            ret = mbedtls_gcm_update(&gcm,                   // GCM context
+                                    models[i],               // input data
+                                    size_model,              // length of input data
+                                    m->encrypted_models[i],  // output of encryption process
+                                    size_model,              // length of input data
+                                    &olen);                  // length of output data (expected size_model)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the whole data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -330,7 +304,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
                                 NULL,            // input data, here NULL
                                 0,               // length of input data, here 0
                                 &olen,           // length of output data, here olen
-                                tag_encr,      // buffer for holding the tag
+                                tag_encr,        // buffer for holding the tag
                                 TAG_BYTES);      // length of the tag
 
         if (ret != 0) {
@@ -339,12 +313,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         }
 
         m->tags[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
-        m->encrypted_model[i] = (unsigned char *)malloc(size_model * sizeof(unsigned char));
-        if (!m->encrypted_model[i] || !m->tags[i]) {
-            fprintf(stderr, "Memory allocation for m->encrypted_model || m->tags[i] failed\n");
-            goto exit_encr;
-        }
-        memcpy(m->encrypted_model[i], encrypted_model, size_model);
+        assert(m->tags[i]);
 
         memset(m->tags[i], 0, TAG_BYTES * 2 + 1);
         for (int j = 0; j < TAG_BYTES; ++j) {
@@ -352,11 +321,10 @@ encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *s
         }
         m->tags[i][TAG_BYTES * 2] = '\0';
            
-        if (!save_model(names[i], encrypted_model, size_model)) {
+        if (!save_model(names[i], m->encrypted_models[i], size_model)) {
             fprintf(stderr, "Error saving model %s\n", names[i]);
             goto exit_encr;
         }
-        free(encrypted_model);
 
         fprintf(stderr, "Tag in tag_encr: ");
         for (int j = 0; j < TAG_BYTES; ++j) {

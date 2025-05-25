@@ -1,4 +1,5 @@
 **/.git
 results/
 src/*/inference_time_*
-memory_intensive_ops//
+memory_intensive_ops/
+src/*/tag_file.txt
