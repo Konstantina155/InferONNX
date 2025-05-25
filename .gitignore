@@ -1,2 +1,4 @@
 **/.git
 results/
+src/*/inference_time_*
+memory_intensive_ops//

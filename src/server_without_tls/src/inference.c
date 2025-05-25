@@ -98,7 +98,7 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, int in
 
 #ifdef USE_AES
 static TractInferenceModel *
-onnx_model_for_path(char *model_name, TractInferenceModel *inference_model, struct EncryptionParameters *params) {
+onnx_model_for_path(char *model_name, TractInferenceModel *inference_model, struct EncryptionParameters *params) {    
     // Initialize onnx parser
     TractOnnx *onnx = NULL;
     check_ret(tract_onnx_create(&onnx), NULL);
@@ -174,23 +174,22 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
     for (int i = 1; i < model_count + 1; i++) {
-        if (strstr(names[i-1], "model.onnx_data") != NULL) {
+        if (strstr(names[i-1], "model.onnx_data") != NULL ||
+            strstr(names[i-1], "qwen") != NULL || 
+            strstr(names[i-1], "llama") != NULL ||
+            strstr(names[i-1], "deepseek") != NULL) {
             inference_models[i] = NULL;
         } else {
             tag = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
             if (!tag) {
                 fprintf(stderr, "Memory allocation for tag failed\n");
-                free(tag);
                 free(key);
                 free(iv);
                 free(aad);
                 free(params);
                 return;
             }
-            memset(tag, 0, TAG_BYTES * 2 + 1);
-            for (int j = 0; j < TAG_BYTES; ++j) {
-                sprintf((char *)(tag + j * 2), "%02x", tags[i][j]);
-            }
+            memcpy(tag, tags[i-1], TAG_BYTES * 2);
             tag[TAG_BYTES * 2] = '\0';
             fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
             params->tag = tag;
@@ -461,6 +460,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
             free(aad);
             free(params);
         }
+
         tag = (uint8_t *)malloc(TAG_BYTES * 2);
         if (!tag) {
             fprintf(stderr, "Memory allocation for tag failed\n");
@@ -471,26 +471,65 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
             free(params);
             return NULL;
         }
-        char *model_name = NULL;
-        char *inference = NULL;
 
+        EncryptionParameters *params_weights = (EncryptionParameters *)malloc(sizeof(EncryptionParameters));
+        if (!params_weights) {
+            fprintf(stderr, "Memory allocation for params_weights failed\n");
+            return NULL;
+        }
+        uint8_t *key2 = (uint8_t *)malloc(KEY_BYTES);
+        uint8_t *iv2 = (uint8_t *)malloc(IV_BYTES);
+        uint8_t *tag2 = NULL;
+        uint8_t *aad2 = (uint8_t *)malloc(ADD_DATA_BYTES);
+        if (!key2 || !iv2 || !aad2) {
+            fprintf(stderr, "Memory allocation for key2, iv2, tag2, aad2 failed\n");
+            free(params);
+            free(params_weights);
+            return NULL;
+        }
+        memcpy(key2, m->key, KEY_BYTES);
+        memcpy(iv2, m->IV, IV_BYTES);
+        memcpy(aad2, m->AAD, ADD_DATA_BYTES);
+        params_weights->key = key2;
+        params_weights->iv = iv2;
+        params_weights->aad = aad2;
+        params_weights->tag = NULL;
+        if (!params_weights->key || !params_weights->iv || !params_weights->aad) {
+            fprintf(stderr, "Error reading Encryption parameters from onnx table\n");
+            free(params);
+            return NULL;
+        }
+
+        tag2 = (uint8_t *)malloc(TAG_BYTES * 2);
+        if (!tag2) {
+            fprintf(stderr, "Memory allocation for tag failed\n");
+            free(tag);
+            free(key);
+            free(iv);
+            free(aad);
+            free(aad2);
+            free(key2);
+            free(iv2);
+            free(params_weights);
+            free(params);
+            return NULL;
+        }
+
+        char *model_name = NULL;
         for (int i = 0; i < model_count; ++i) {
             if (strstr(m->names[i], "model.onnx_data") == NULL) {
                 model_name = m->names[i];
                 memcpy(tag, tags[i], TAG_BYTES * 2);
-                break;
+                params->tag = tag;
+            } else {
+                memcpy(tag2, tags[i], TAG_BYTES * 2);
+                params_weights->tag = tag2;
             }
         }
-        params->tag = tag;
+        char *inference = NULL;   
         
-        int is_albert = strstr(model_name, "albert") != NULL;
-
         gettimeofday(&t1_inf, NULL);
-        if (is_albert) {
-            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
-        } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, NUM_TOKENS, NULL), NULL);
-        }
+        check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, NULL), NULL);
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
@@ -501,7 +540,12 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(key);
         free(iv);
         free(aad);
+        free(tag2);
+        free(key2);
+        free(iv2);
+        free(aad2);
         free(params);
+        free(params_weights);
 
         return inference;
     } else {
@@ -657,7 +701,10 @@ load_model_to_memory(model **m)
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
     for (int i = 1; i < model_count + 1; i++) {
-        if (strstr(names[i-1], "model.onnx_data") != NULL) {
+        if (strstr(names[i-1], "model.onnx_data") != NULL ||
+            strstr(names[i-1], "qwen") != NULL || 
+            strstr(names[i-1], "llama") != NULL ||
+            strstr(names[i-1], "deepseek") != NULL) {
             inference_models[i] = NULL;
         } else {
             inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i]);
@@ -665,7 +712,6 @@ load_model_to_memory(model **m)
                 return;
             }
         }
-        fprintf(stderr, "here!\n");
 
         if (i == initial_length) {
             resize_operators_io(&io, initial_length + 5, initial_length);
@@ -684,9 +730,7 @@ load_model_to_memory(model **m)
         previous = curr_node;
 
         onnx_model_inputs(io, inference_models[i], i, head, names[i-1]);
-        fprintf(stderr, "here2\n");
     }
-    fprintf(stderr, "here3");
     (*m)->head = head;
     
     free_operator_io(io);
@@ -874,14 +918,8 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
             }
         }
         
-        int is_albert = strstr(model_name, "albert") != NULL;
-
         gettimeofday(&t1_inf, NULL);
-        if (is_albert) {
-            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL), NULL);
-        } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, NULL), NULL);
-        }
+        check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS), NULL);
         
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms

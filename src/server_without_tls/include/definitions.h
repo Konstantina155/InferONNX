@@ -50,7 +50,7 @@ typedef struct encrypted_models_info
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
-    unsigned char **tag;
+    unsigned char **tags;
 } encrypted_models_info;
 
 typedef struct client_result
