@@ -6,8 +6,6 @@
 #include <netinet/in.h>
 #include <inference.h>
 
-#define CHUNK_SIZE (500L * 1024 * 1024)
-
 /* HELPER FUNCTIONS */
 static void
 free_array(void **array, int length)
@@ -35,18 +33,19 @@ add_path_to_names(char **names, int size_names)
 {
     assert(names);
     
-    const char *home_dir = "/hdd/papafrkon";
-    if (!home_dir) {
+    const char *home_dir = getenv("HOME");
+    const char *base_name = strrchr(home_dir, '/');
+    if (!home_dir || !base_name) {
         fprintf(stderr, "Error: HOME environment variable is not set\n");
         return NULL;
     }
 
     for (int i = 0; i < size_names; ++i) {
-        char path[512];
+        char path[SMALL_SIZE];
 #ifdef USE_AES
-        snprintf(path, sizeof(path), "%s/encrypted_models/", home_dir);
+        snprintf(path, sizeof(path), "/hdd%s/encrypted_models/", base_name);
 #else
-        snprintf(path, sizeof(path), "%s/unencrypted_models/", home_dir);
+        snprintf(path, sizeof(path), "/hdd%s/unencrypted_models/", base_name);
 #endif
         strcat(path, names[i]);
         free(names[i]);
@@ -523,6 +522,7 @@ free_request(request *req_original)
     }
     if (req_original->tokenizer != NULL) {
         free(req_original->tokenizer);
+        tract_free_onig();
     }
 }
 
@@ -562,16 +562,16 @@ handle_request(char *client_request, onnx_table *table)
         names = add_path_to_names(names, num_models);
 
         if (find_duplicate_names_from_id(table, names)) {
-            char *error = (char *) malloc(512 * sizeof(char));
+            char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
                 fprintf(stderr, "Error allocating memory for error\n");
                 free_request(&req_copy);
                 free(client_request);
                 return NULL;
             }
-            snprintf(error, 512, "Model is already in the onnx table");
-            error[511] = '\0';
-            c_l->size = 512;
+            snprintf(error, SMALL_SIZE, "Model is already in the onnx table");
+            error[SMALL_SIZE - 1] = '\0';
+            c_l->size = SMALL_SIZE;
             c_l->result = (unsigned char *) malloc((c_l->size + 1) * sizeof(unsigned char));
             if (!c_l->result) {
                 fprintf(stderr, "Memory allocation failed for c_l->result in MODEL\n");
@@ -701,7 +701,7 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         }
 
-        #if (USE_AES == 1 && USE_MEMORY_ONLY == 1) || USE_AES == 0
+#if (USE_AES == 1 && USE_MEMORY_ONLY == 1) || USE_AES == 0
         if (tags) {
             fprintf(stderr, "Invalid request for MODEL_INPUT for tags for memory-only\n");
             free_request(&req_copy);
@@ -726,14 +726,14 @@ handle_request(char *client_request, onnx_table *table)
         char *result = NULL;
         model *m = get_model(table, id_str);
         if (!m) {
-            char *error = (char *) malloc(512 * sizeof(char));
+            char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
                 fprintf(stderr, "Error allocating memory for error\n");
                 return NULL;
             }
-            snprintf(error, 512, "Model with id %d not found\n", id);
-            error[511] = '\0';
-            c_l->size = 512;
+            snprintf(error, SMALL_SIZE, "Model with id %d not found\n", id);
+            error[SMALL_SIZE - 1] = '\0';
+            c_l->size = SMALL_SIZE;
             c_l->result = (unsigned char *) malloc((c_l->size + 1) * sizeof(unsigned char));
             if (!c_l->result) {
                 fprintf(stderr, "Memory allocation failed for c_l->result in MODEL\n");
@@ -772,7 +772,11 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(c_l->result, result, size);
         c_l->size = size;
 
-        free(result);
+        if (tokenizer) {
+            tract_free_cstring(result);
+        } else {
+            free(result);
+        }
 
         break;
     }
@@ -837,7 +841,7 @@ main()
         /*
         * 2. Wait until a client connects
         */
-        fprintf(stderr, "\n\nWaiting for a remote connection ...");
+        fprintf(stderr, "\n\nWaiting for a remote connection...");
         if ((admin = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
             perror("Accept failed");
             exit(EXIT_FAILURE);

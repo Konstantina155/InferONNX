@@ -4,6 +4,7 @@ USE_OCCLUM ?= 0
 USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
 USE_STRIP ?= 0
+USE_DEBUG ?= 0
 
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
@@ -32,6 +33,9 @@ ifeq ($(USE_AES), 1)
     endif
 else
 	LDFLAGS += -I./tract_no_aes -L./tract_no_aes -ltract -lm -lpthread
+endif
+ifeq ($(USE_DEBUG), 1)
+	CFLAGS += -DUSE_DEBUG
 endif
 
 all: ssl_client

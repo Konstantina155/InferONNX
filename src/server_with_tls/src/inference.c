@@ -24,26 +24,30 @@ static void
 onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, int index, operator_node *head, char *model_name)
 {
     uintptr_t num_inputs = 0;
-    char *input_name = NULL;
-    check(tract_inference_model_input_count(inference_model, &num_inputs));
-    
-    char **input_names = malloc((num_inputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_inputs; i++) {
-        check(tract_inference_model_input_name(inference_model, i, &input_name));
-        input_names[i] = input_name;
-    }
-    input_names[num_inputs] = NULL;
-
     uintptr_t num_outputs = 0;
+    char *input_name = NULL;
+    char **input_names = NULL;
+    char **output_names = NULL;
     int8_t *output_name = NULL;
-    check(tract_inference_model_output_count(inference_model, &num_outputs));
-    
-    char **output_names = malloc((num_outputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_outputs; i++) {
-        check(tract_inference_model_output_name(inference_model, i, &output_name));
-        output_names[i] = (char *)output_name;
+
+
+    if (inference_model) {
+        check(tract_inference_model_input_count(inference_model, &num_inputs));
+        input_names = malloc((num_inputs + 1) * sizeof(char *));
+        for (int i = 0; i < (int)num_inputs; i++) {
+            check(tract_inference_model_input_name(inference_model, i, &input_name));
+            input_names[i] = input_name;
+        }
+        input_names[num_inputs] = NULL;
+
+        check(tract_inference_model_output_count(inference_model, &num_outputs));
+        output_names = malloc((num_outputs + 1) * sizeof(char *));
+        for (int i = 0; i < (int)num_outputs; i++) {
+            check(tract_inference_model_output_name(inference_model, i, &output_name));
+            output_names[i] = (char *)output_name;
+        }
+        output_names[num_outputs] = NULL;
     }
-    output_names[num_outputs] = NULL;
 
     if (index == 1) {
         operator_io o_io_first;
@@ -168,29 +172,36 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
     for (int i = 1; i < model_count + 1; i++) {
-        tag = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
-        if (!tag) {
-            fprintf(stderr, "Memory allocation for tag failed\n");
-            free(tag);
-            free(key);
-            free(iv);
-            free(aad);
-            free(params);
-            return;
-        }
-        memcpy(tag, tags[i-1], TAG_BYTES * 2);
-        tag[TAG_BYTES * 2] = '\0';
-        fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
-        params->tag = tag;
+        if (strstr(names[i-1], "model.onnx_data") != NULL ||
+            strstr(names[i-1], "qwen") != NULL || 
+            strstr(names[i-1], "llama") != NULL ||
+            strstr(names[i-1], "deepseek") != NULL) {
+            inference_models[i] = NULL;
+        } else {
+            tag = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
+            if (!tag) {
+                fprintf(stderr, "Memory allocation for tag failed\n");
+                free(tag);
+                free(key);
+                free(iv);
+                free(aad);
+                free(params);
+                return;
+            }
+            memcpy(tag, tags[i-1], TAG_BYTES * 2);
+            tag[TAG_BYTES * 2] = '\0';
+            fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
+            params->tag = tag;
 
-        inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i], params);
-        if (!inference_models[i]) {
-            free(tag);
-            free(key);
-            free(iv);
-            free(aad);
-            free(params);
-            return;
+            inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i], params);
+            if (!inference_models[i]) {
+                free(tag);
+                free(key);
+                free(iv);
+                free(aad);
+                free(params);
+                return;
+            }
         }
 
         if (i == initial_length) {
@@ -222,7 +233,14 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     (*m)->head = head;
 
 #ifdef USE_MEMORY_ONLY
-    (*m)->inference_models = inference_models;
+    if (strstr(names[i-1], "model.onnx_data") != NULL ||
+            strstr(names[i-1], "qwen") != NULL || 
+            strstr(names[i-1], "llama") != NULL ||
+            strstr(names[i-1], "deepseek") != NULL) {
+        free_inference_models(inference_models, model_count + 1);
+    } else {
+        (*m)->inference_models = inference_models;
+    }
 #else
     free_inference_models(inference_models, model_count + 1);
 #endif
@@ -270,9 +288,16 @@ load_model_to_memory(model **m)
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
     for (int i = 1; i < model_count + 1; i++) {
-        inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i]);
-        if (!inference_models[i]) {
-            return;
+        if (strstr(names[i-1], "model.onnx_data") != NULL ||
+            strstr(names[i-1], "qwen") != NULL || 
+            strstr(names[i-1], "llama") != NULL ||
+            strstr(names[i-1], "deepseek") != NULL) {
+            inference_models[i] = NULL;
+        } else {
+            inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i]);
+            if (!inference_models[i]) {
+                return;
+            }
         }
 
         if (i == initial_length) {
@@ -443,16 +468,23 @@ execute_tree(operator_node *node, TractValue **input_values, double elapsed_time
 
         if (*visited_count != 1) {
             fprintf(stderr, "Model name: %s\n", node->model_name);
+#ifdef USE_DEBUG
+            node->run_inference(&node, input_values, NULL);
+    #ifdef USE_SYS_TIME
+                fprintf(fd, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
+    #endif
+#else
             if (fd) {
                 node->run_inference(&node, input_values, NULL);
-#ifdef USE_SYS_TIME
+    #ifdef USE_SYS_TIME
                 fprintf(fd, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
-#endif
+    #endif
             } else {
                 assert(inference_models);
                 node->run_inference(&node, input_values, inference_models[*visited_count - 1]);
                 fprintf(stderr, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
             }
+#endif
         
             elapsed_time += node->elapsedTime;
         }
@@ -474,41 +506,56 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
 
     char *error = NULL;
     if (!m) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
-
-    FILE *fd = NULL;
 
     if (!images && tokenizer_size > 0){
         int model_count = get_array_size((void **)m->names);
         fprintf(stderr, "Model count: %d\n", model_count);
+        char *model_name = NULL;
         char *inference = NULL;
+
+        for (int i = 0; i < model_count; ++i) {
+            if (strstr(m->names[i], "model.onnx_data") == NULL) {
+                model_name = m->names[i];
+                break;
+            }
+        }
+        
+        int is_albert = strstr(model_name, "albert") != NULL;
+
         gettimeofday(&t1_inf, NULL);
-        check_ret(tract_run_albert(m->names[0], tokenizer, tokenizer_size, &inference), NULL);
+        if (is_albert) {
+            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL), NULL);
+        } else {
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS), NULL);
+        }
+
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
-
-        fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        
+#ifdef USE_SYS_TIME
+        FILE *fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
         if (!fd) {
             fprintf(stderr, "Error opening inference_time!\n");
             return NULL;
         }
-#ifdef USE_SYS_TIME
+
         if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
             fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
             fclose(fd);
             return NULL;
         }
-#endif
         fclose(fd);
+#endif
         return inference;
     } else {
         assert(images);
@@ -517,19 +564,14 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     int model_count = get_array_size((void **)m->names);
     fprintf(stderr, "Model count: %d\n", model_count);
 
-    #include <unistd.h>
-    #include <limits.h>
-
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        fprintf(stderr, "Current working directory: %s\n", cwd);
-    }
+    FILE *fd = NULL;
+#ifndef USE_DEBUG
     fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
     if (!fd) {
         fprintf(stderr, "Error opening inference_time_outside_occlum_on_disk_no_aes!\n");
         return NULL;
     }
-
+#endif
 
     int size, flag;
     TractValue *input_value = NULL;
@@ -578,29 +620,35 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     
     elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
     elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
-#ifdef USE_SYS_TIME
-    if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+
+#ifndef USE_DEBUG
+    #ifdef USE_SYS_TIME
+        if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
+            fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+            fclose(fd);
+            return NULL;
+        }
+        if (fprintf(fd, "Inference time to run a model: %f ms\n", sum) < 0) {
+            fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+            fclose(fd);
+            return NULL;
+        }
+    #endif
         fclose(fd);
-        return NULL;
-    }
-    if (fprintf(fd, "Inference time to run a model: %f ms\n", sum) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
-        fclose(fd);
-        return NULL;
-    }
+#else
+    fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
+    fprintf(stderr, "Inference time to run a model: %f ms\n", sum);
 #endif
-    fclose(fd);
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
-    char *prediction = (char *) malloc(512 * sizeof(char));
+    char *prediction = (char *) malloc(SMALL_SIZE * sizeof(char));
     if (!prediction) {
         fprintf(stderr, "Error allocating memory for result\n");
         return NULL;
     }
 
-    snprintf(prediction, 512, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
-    prediction[511] = '\0';
+    snprintf(prediction, SMALL_SIZE, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
+    prediction[SMALL_SIZE - 1] = '\0';
     return prediction;
 }
 #else
@@ -619,22 +667,22 @@ inference_memory_only(float **images, int num_images, model *m)
 
     char *error = NULL;
     if (!m) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     } else if (!m->inference_models) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No inference model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No inference model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -698,13 +746,13 @@ inference_memory_only(float **images, int num_images, model *m)
     fprintf(stderr, "Inference time to run a model: %f ms\n", sum);
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
-    char *prediction = (char *) malloc(512 * sizeof(char));
+    char *prediction = (char *) malloc(SMALL_SIZE * sizeof(char));
     if (!prediction) {
         fprintf(stderr, "Error allocating memory for result\n");
         return NULL;
     }
-    snprintf(prediction, 512, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
-    prediction[511] = '\0';
+    snprintf(prediction, SMALL_SIZE, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
+    prediction[SMALL_SIZE - 1] = '\0';
     
     return prediction;
 }
@@ -893,13 +941,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
 
     char *error = NULL;
     if (!m) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -938,6 +986,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
             free(aad);
             free(params);
         }
+
         tag = (uint8_t *)malloc(TAG_BYTES * 2);
         if (!tag) {
             fprintf(stderr, "Memory allocation for tag failed\n");
@@ -948,14 +997,72 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
             free(params);
             return NULL;
         }
-        memcpy(tag, tags[0], TAG_BYTES * 2);
-        params->tag = tag;
+
+        EncryptionParameters *params_weights = (EncryptionParameters *)malloc(sizeof(EncryptionParameters));
+        if (!params_weights) {
+            fprintf(stderr, "Memory allocation for params_weights failed\n");
+            return NULL;
+        }
+        uint8_t *key2 = (uint8_t *)malloc(KEY_BYTES);
+        uint8_t *iv2 = (uint8_t *)malloc(IV_BYTES);
+        uint8_t *tag2 = NULL;
+        uint8_t *aad2 = (uint8_t *)malloc(ADD_DATA_BYTES);
+        if (!key2 || !iv2 || !aad2) {
+            fprintf(stderr, "Memory allocation for key2, iv2, tag2, aad2 failed\n");
+            free(params);
+            free(params_weights);
+            return NULL;
+        }
+        memcpy(key2, m->key, KEY_BYTES);
+        memcpy(iv2, m->IV, IV_BYTES);
+        memcpy(aad2, m->AAD, ADD_DATA_BYTES);
+        params_weights->key = key2;
+        params_weights->iv = iv2;
+        params_weights->aad = aad2;
+        params_weights->tag = NULL;
+        if (!params_weights->key || !params_weights->iv || !params_weights->aad) {
+            fprintf(stderr, "Error reading Encryption parameters from onnx table\n");
+            free(params);
+            return NULL;
+        }
+
+        tag2 = (uint8_t *)malloc(TAG_BYTES * 2);
+        if (!tag2) {
+            fprintf(stderr, "Memory allocation for tag failed\n");
+            free(tag);
+            free(key);
+            free(iv);
+            free(aad);
+            free(aad2);
+            free(key2);
+            free(iv2);
+            free(params_weights);
+            free(params);
+            return NULL;
+        }
+
+        char *model_name = NULL;
+        for (int i = 0; i < model_count; ++i) {
+            if (strstr(m->names[i], "model.onnx_data") == NULL) {
+                model_name = m->names[i];
+                memcpy(tag, tags[i], TAG_BYTES * 2);
+                params->tag = tag;
+            } else {
+                memcpy(tag2, tags[i], TAG_BYTES * 2);
+                params_weights->tag = tag2;
+            }
+        }
         char *inference = NULL;
+        int is_albert = strstr(model_name, "albert") != NULL;
 
 #ifdef USE_SYS_TIME
     gettimeofday(&t1_inf, NULL);
 #endif
-        check_ret(tract_run_albert(m->names[0], tokenizer, tokenizer_size, &inference, params), NULL);
+        if (is_albert) {
+            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
+        } else {
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, NULL), NULL);
+        }
 #ifdef USE_SYS_TIME
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
@@ -970,7 +1077,12 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(key);
         free(iv);
         free(aad);
+        free(tag2);
+        free(key2);
+        free(iv2);
+        free(aad2);
         free(params);
+        free(params_weights);
 
         return inference;
     } else {
@@ -986,13 +1098,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(iv);
         free(aad);
         free(params);
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "Number of tags should be the same as number of models");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "Number of tags should be the same as number of models");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -1050,13 +1162,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(iv);
         free(aad);
         free(params);
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "Model authentication is incorrect! Wrong EncryptionParams!");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "Model authentication is incorrect! Wrong EncryptionParams!");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -1071,14 +1183,14 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
     fprintf(stderr, "Inference time to run a model: %f ms\n", sum);
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
-    char *prediction = (char *) malloc(512 * sizeof(char));
+    char *prediction = (char *) malloc(SMALL_SIZE * sizeof(char));
     if (!prediction) {
         fprintf(stderr, "Error allocating memory for result\n");
         return NULL;
     }
 
-    snprintf(prediction, 512, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
-    prediction[511] = '\0';
+    snprintf(prediction, SMALL_SIZE, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
+    prediction[SMALL_SIZE - 1] = '\0';
     
     free(key);
     free(iv);

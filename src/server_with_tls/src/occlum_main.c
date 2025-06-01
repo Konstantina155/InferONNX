@@ -37,7 +37,7 @@ add_path_to_names(char **names, int size_names)
     const char *home_dir = "/bin";
 
     for (int i = 0; i < size_names; ++i) {
-        char path[512];
+        char path[SMALL_SIZE];
         snprintf(path, sizeof(path), "%s/encrypted_models/", home_dir);
         strcat(path, names[i]);
         free(names[i]);
@@ -66,14 +66,9 @@ initialize_encrypted_models_info(int num_models)
     memset(m->key, 0, KEY_BYTES);
     memset(m->IV, 0, IV_BYTES);
     memset(m->AAD, 0, ADD_DATA_BYTES);
-    m->encrypted_model = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-    m->tag = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-    for (int i = 0; i < num_models; ++i) {
-        m->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
-        assert(m->tag[i]);
-        memset(m->tag[i], 0, TAG_BYTES);   
-    }
-
+    m->encrypted_models = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
+    m->tags = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
+    assert(m->tags && m->encrypted_models);
     return m;
 }
 
@@ -97,11 +92,11 @@ free_encrypted_models_info(encrypted_models_info *m, int num_models)
 {
     assert(m);
     for (int i = 0; i < num_models; ++i) {
-        free(m->encrypted_model[i]);
-        free(m->tag[i]);
+        free(m->encrypted_models[i]);
+        free(m->tags[i]);
     }
-    free(m->encrypted_model);
-    free(m->tag);
+    free(m->encrypted_models);
+    free(m->tags);
     free(m);
 }
 
@@ -137,16 +132,14 @@ save_model(char *name, unsigned char *model, size_t size_model)
 }
 
 encrypted_models_info *
-encrypt_models(char **names, int size_names, unsigned char **models, int *size_models)
+encrypt_models(char **names, int size_names, unsigned char **models, uint64_t *size_models)
 {
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
     mbedtls_gcm_context gcm;
 
-    unsigned char key[KEY_BYTES];
-    unsigned char iv[IV_BYTES];
-    unsigned char add_data[ADD_DATA_BYTES];
     unsigned char tag_encr[TAG_BYTES];
+    memset(tag_encr, 0, TAG_BYTES);
     size_t olen;
     int ret;
 
@@ -164,48 +157,27 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
         goto exit_encr;
     }
 
-    memset(key, 0, KEY_BYTES);
-    memset(iv, 0, IV_BYTES);
-    memset(add_data, 0, ADD_DATA_BYTES);
-    memset(tag_encr, 0, TAG_BYTES);
-
-    // Generate random bytes for the key (32 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, key, KEY_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract key - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
-    // Generate random bytes for the IV (12 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, iv, IV_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract IV - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
-    // Generate random bytes for the add_data (64 Bytes)
-    ret = mbedtls_ctr_drbg_random(&ctr_drbg, add_data, ADD_DATA_BYTES);
-    if (ret != 0) {
-        fprintf(stderr, "mbedtls_ctr_drbg_random failed to extract add_data - returned -0x%04x\n", -ret);
-        goto exit_encr;
-    }
-
     encrypted_models_info *m = initialize_encrypted_models_info(size_names);
     if (!m) {
         fprintf(stderr, "Memory allocation failed for encrypted_models_info\n");
         goto exit_encr;
     }
 
-    memcpy(m->key, key, KEY_BYTES);
-    memcpy(m->IV, iv, IV_BYTES);
-    memcpy(m->AAD, add_data, ADD_DATA_BYTES);
+    // Generate random key, IV, and AAD directly into struct
+    if ((ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->key, KEY_BYTES)) != 0 ||
+        (ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->IV, IV_BYTES)) != 0 ||
+        (ret = mbedtls_ctr_drbg_random(&ctr_drbg, m->AAD, ADD_DATA_BYTES)) != 0) {
+        fprintf(stderr, "Random generation failed - returned -0x%04x\n", -ret);
+        goto exit_encr;
+    }
 
-    unsigned char *encrypted_model = NULL;
     size_t size_model = 0;
     for (int i = 0; i < size_names; ++i) {
+        fprintf(stderr, "Model: %s\n", names[i]);
         size_model = (size_t)size_models[i];
-        encrypted_model = (unsigned char *)malloc(size_model);
-        if (!encrypted_model) {
+
+        m->encrypted_models[i] = (unsigned char *)malloc(size_model);
+        if (!m->encrypted_models[i]) {
             ret = 1;
             fprintf(stderr, "Memory allocation for encrypted model `%s` failed\n", names[i]);
             goto exit_encr;
@@ -215,9 +187,9 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
 
         // Initialize the GCM context with our key and desired cipher
         ret = mbedtls_gcm_setkey(&gcm,                      // GCM context to be initialized
-                                MBEDTLS_CIPHER_ID_AES,     // cipher to use (a 128-bit block cipher)
-                                key,                       // encryption key
-                                KEY_BITS);                 // key bits
+                                MBEDTLS_CIPHER_ID_AES,      // cipher to use (a 128-bit block cipher)
+                                m->key,                     // encryption key
+                                KEY_BITS);                  // key bits
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_setkey failed to set the key for AES cipher in encryption process - returned -0x%04x\n", -ret);
             goto exit_encr;
@@ -226,7 +198,7 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
         // Start the GCM encryption process
         ret = mbedtls_gcm_starts(&gcm,                 // GCM context
                                 MBEDTLS_GCM_ENCRYPT,   // mode
-                                iv,                    // initialization vector
+                                m->IV,                 // initialization vector
                                 IV_BYTES);             // length of IV
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_starts failed to start the encryption process - returned -0x%04x\n", -ret);
@@ -234,9 +206,9 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
         }
 
         // Set additional authenticated data (AAD)
-        ret = mbedtls_gcm_update_ad(&gcm,              // GCM context
-                                    add_data,          // additional data
-                                    ADD_DATA_BYTES);   // length of AAD
+        ret = mbedtls_gcm_update_ad(&gcm,                // GCM context
+                                    m->AAD,              // additional data
+                                    ADD_DATA_BYTES);     // length of AAD
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_starts failed to set the AAD in the encryption process - returned -0x%04x\n", -ret);
             goto exit_encr;
@@ -246,12 +218,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
             size_t rest_len = size_model - 32;
 
             // Encrypt the first 32 bytes
-            ret = mbedtls_gcm_update(&gcm,               // GCM context
-                                    models[i],           // input data
-                                    32,                  // length of first 32 bytes of input data
-                                    encrypted_model,     // output of encryption process for the first 32 bytes
-                                    size_model,          // length of input data
-                                    &olen);              // length of output data (expected 32)
+            ret = mbedtls_gcm_update(&gcm,                    // GCM context
+                                    models[i],                // input data
+                                    32,                       // length of first 32 bytes of input data
+                                    m->encrypted_models[i],   // output of encryption process for the first 32 bytes
+                                    size_model,               // length of input data
+                                    &olen);                   // length of output data (expected 32)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the first 32 bytes of input data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -262,12 +234,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
             }
 
             // Encrypt the rest of the data
-            ret = mbedtls_gcm_update(&gcm,                     // GCM context
-                                    models[i] + 32,            // input data for the rest data
-                                    rest_len,                  // length of the rest data
-                                    encrypted_model + 32,      // output of encryption process for the rest data
-                                    size_model - 32,           // length of the rest data
-                                    &olen);                    // length of output data (expected rest_len)
+            ret = mbedtls_gcm_update(&gcm,                        // GCM context
+                                    models[i] + 32,               // input data for the rest data
+                                    rest_len,                     // length of the rest data
+                                    m->encrypted_models[i] + 32,  // output of encryption process for the rest data
+                                    size_model - 32,              // length of the rest data
+                                    &olen);                       // length of output data (expected rest_len)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the rest of the data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -278,12 +250,12 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
             }
         } else {
             // Encrypt the whole model
-            ret = mbedtls_gcm_update(&gcm,                // GCM context
-                                    models[i],            // input data
-                                    size_model,           // length of input data
-                                    encrypted_model,      // output of encryption process
-                                    size_model,           // length of input data
-                                    &olen);               // length of output data (expected size_model)
+            ret = mbedtls_gcm_update(&gcm,                   // GCM context
+                                    models[i],               // input data
+                                    size_model,              // length of input data
+                                    m->encrypted_models[i],  // output of encryption process
+                                    size_model,              // length of input data
+                                    &olen);                  // length of output data (expected size_model)
             if (ret != 0) {
                 fprintf(stderr, "mbedtls_gcm_update failed to encrypt the whole data - returned -0x%04x\n", -ret);
                 goto exit_encr;
@@ -301,35 +273,29 @@ encrypt_models(char **names, int size_names, unsigned char **models, int *size_m
                                 &olen,           // length of output data, here olen
                                 tag_encr,        // buffer for holding the tag
                                 TAG_BYTES);      // length of the tag
+
         if (ret != 0) {
             fprintf(stderr, "mbedtls_gcm_finish failed to finish the encryption process and generate the tag - returned -0x%04x\n", -ret);
             goto exit_encr;
         }
 
-        m->encrypted_model[i] = (unsigned char *)malloc(size_model * sizeof(unsigned char));
-        if (!m->encrypted_model[i] || !m->tag[i]) {
-            fprintf(stderr, "Memory allocation for m->encrypted_model || m->tag[i] failed\n");
-            goto exit_encr;
-        }
-        memcpy(m->encrypted_model[i], encrypted_model, size_model);
-        memcpy(m->tag[i], tag_encr, TAG_BYTES);
+        m->tags[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
+        assert(m->tags[i]);
 
-        if (!save_model(names[i], encrypted_model, size_model)) {
+        memset(m->tags[i], 0, TAG_BYTES * 2 + 1);
+        for (int j = 0; j < TAG_BYTES; ++j) {
+            sprintf((char *)(m->tags[i] + j * 2), "%02x", tag_encr[j]);
+        }
+        m->tags[i][TAG_BYTES * 2] = '\0';
+           
+        if (!save_model(names[i], m->encrypted_models[i], size_model)) {
             fprintf(stderr, "Error saving model %s\n", names[i]);
             goto exit_encr;
         }
-        free(encrypted_model);
 
-        //print tag_encr in hex
         fprintf(stderr, "Tag in tag_encr: ");
         for (int j = 0; j < TAG_BYTES; ++j) {
             fprintf(stderr, "%02x", tag_encr[j]);
-        }
-        fprintf(stderr, "\n");
-
-        fprintf(stderr, " Tag in m->tag: ");
-        for (int j = 0; j < TAG_BYTES; ++j) {
-            fprintf(stderr, "%02x", m->tag[i][j]);
         }
         fprintf(stderr, "\n");
 
@@ -383,11 +349,11 @@ deserialize_client_request(const char* buf, request* req)
             req->names = NULL;
         }
 
-        // Int* field -> size_models
+        // Uint64_t* field -> size_models
         if (size > 0) {
-            req->size_models = malloc(size * sizeof(int));
-            memcpy(req->size_models, buf + offset, size * sizeof(int));
-            offset += size * sizeof(int);
+            req->size_models = malloc(size * sizeof(uint64_t));
+            memcpy(req->size_models, buf + offset, size * sizeof(uint64_t));
+            offset += size * sizeof(uint64_t);
         } else {
             req->size_models = NULL;
         }
@@ -404,11 +370,11 @@ deserialize_client_request(const char* buf, request* req)
             req->models = NULL;
         }
 
-        // Int* field -> size_inputs
+        // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
-            req->size_inputs = malloc(num_inputs * sizeof(int));
-            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(int));
-            offset += num_inputs * sizeof(int);
+            req->size_inputs = malloc(num_inputs * sizeof(uint64_t));
+            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(uint64_t));
+            offset += num_inputs * sizeof(uint64_t);
         } else {
             req->size_inputs = NULL;
         }
@@ -418,7 +384,7 @@ deserialize_client_request(const char* buf, request* req)
             fprintf(stderr, "num_inputs: %d\n", num_inputs);
             req->input = malloc(num_inputs * sizeof(float *));
             for (int i = 0; i < num_inputs; ++i) {
-                fprintf(stderr, "input_size[%d]: %d\n", i, req->size_inputs[i]);
+                fprintf(stderr, "input_size[%d]: %ld\n", i, req->size_inputs[i]);
                 req->input[i] = malloc(req->size_inputs[i] * sizeof(float));
                 memcpy(req->input[i], buf + offset, req->size_inputs[i] * sizeof(float));
                 offset += req->size_inputs[i] * sizeof(float);
@@ -428,16 +394,16 @@ deserialize_client_request(const char* buf, request* req)
         }
         req->tags = NULL;
 
-        // Int field -> tokenizer_size
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(int));
-        offset += sizeof(int);
+        // Uint64_t field -> tokenizer_size
+        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
         req->tokenizer = NULL;
     } else {
-        // Int* field -> size_inputs
+        // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
-            req->size_inputs = malloc(num_inputs * sizeof(int));
-            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(int));
-            offset += num_inputs * sizeof(int);
+            req->size_inputs = malloc(num_inputs * sizeof(uint64_t));
+            memcpy(req->size_inputs, buf + offset, num_inputs * sizeof(uint64_t));
+            offset += num_inputs * sizeof(uint64_t);
         } else {
             req->size_inputs = NULL;
         }
@@ -447,7 +413,7 @@ deserialize_client_request(const char* buf, request* req)
             fprintf(stderr, "num_inputs: %d\n", num_inputs);
             req->input = malloc(num_inputs * sizeof(float *));
             for (int i = 0; i < num_inputs; ++i) {
-                fprintf(stderr, "input_size[%d]: %d\n", i, req->size_inputs[i]);
+                fprintf(stderr, "input_size[%d]: %ld\n", i, req->size_inputs[i]);
                 req->input[i] = malloc(req->size_inputs[i] * sizeof(float));
                 memcpy(req->input[i], buf + offset, req->size_inputs[i] * sizeof(float));
                 offset += req->size_inputs[i] * sizeof(float);
@@ -474,8 +440,8 @@ deserialize_client_request(const char* buf, request* req)
         req->models = NULL;
         req->num_models = 0;
 
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(int));
-        offset += sizeof(int);
+        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
 
         // Uint8_t* field -> tokenizer
         if (req->tokenizer_size > 0) {
@@ -523,6 +489,7 @@ free_request(request *req_original)
     }
     if (req_original->tokenizer != NULL) {
         free(req_original->tokenizer);
+        tract_free_onig();
     }
 }
 
@@ -538,12 +505,12 @@ handle_request(char *client_request, onnx_table *table)
     char **names = req_copy.names;
     uint8_t **models = req_copy.models;
     float **input = req_copy.input;
-    int *size_inputs = req_copy.size_inputs;
+    uint64_t *size_inputs = req_copy.size_inputs;
     int num_inputs = req_copy.num_inputs;
     int num_models = req_copy.num_models;
-    int *size_models = req_copy.size_models;
+    uint64_t *size_models = req_copy.size_models;
     unsigned char **tags = req_copy.tags;
-    int tokenizer_size = req_copy.tokenizer_size;
+    uint64_t tokenizer_size = req_copy.tokenizer_size;
     uint8_t* tokenizer = req_copy.tokenizer;
 
     int size = 0;
@@ -557,21 +524,21 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         }
 
-        fprintf(stderr, "MODEL SIZE: %d\n", size_models[0]);
+        fprintf(stderr, "MODEL SIZE: %ld\n", size_models[0]);
 
         names = add_path_to_names(names, num_models);
 
         if (find_duplicate_names_from_id(table, names)) {
-            char *error = (char *) malloc(512 * sizeof(char));
+            char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
                 fprintf(stderr, "Error allocating memory for error\n");
                 free_request(&req_copy);
                 free(client_request);
                 return NULL;
             }
-            snprintf(error, 512, "Model is already in the onnx table");
-            error[511] = '\0';
-            c_l->size = 512;
+            snprintf(error, SMALL_SIZE, "Model is already in the onnx table");
+            error[SMALL_SIZE - 1] = '\0';
+            c_l->size = SMALL_SIZE;
             c_l->result = (unsigned char *) malloc((c_l->size + 1) * sizeof(unsigned char));
             if (!c_l->result) {
                 fprintf(stderr, "Memory allocation failed for c_l->result in MODEL\n");
@@ -603,58 +570,8 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
         m->inference_models = NULL;
         m->head = NULL;
-
-        unsigned char **tags = (unsigned char **) malloc(num_models * sizeof(unsigned char *));
-        if (!tags) {
-            fprintf(stderr, "Memory allocation failed for tags in MODEL\n");
-            free_request(&req_copy);
-            free(client_request);
-            free_encrypted_models_info(me, num_models);
-            free(c_l->result);
-            return NULL;
-        }
-        for (int i = 0; i < num_models; ++i) {
-            tags[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
-            if (!tags[i]) {
-                fprintf(stderr, "Memory allocation failed for tags[i] in MODEL\n");
-                free_request(&req_copy);
-                free(client_request);
-                free_encrypted_models_info(me, num_models);
-                free(c_l->result);
-                return NULL;
-            }
-            memset(tags[i], 0, TAG_BYTES * 2 + 1);
-            for (int j = 0; j < TAG_BYTES; ++j) {
-                sprintf((char *)(tags[i] + j * 2), "%02x", me->tag[i][j]);
-            }
-            tags[i][TAG_BYTES * 2] = '\0';
-        }
   
-        load_model_to_memory(&m, tags, num_models);
-        
-        for (int i = 0; i < num_models; ++i) {
-            free(tags[i]);
-        }
-        free(tags);
-
-    #if USE_MEMORY_ONLY == 0    
-        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
-        for (int i = 0; i < num_models; ++i) {
-            c_l->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
-            if (!c_l->tag[i]) {
-                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
-                free_request(&req_copy);
-                free(client_request);
-                free_encrypted_models_info(me, num_models);
-                free(c_l->result);
-                return NULL;
-            }
-            memset(c_l->tag[i], 0, TAG_BYTES);
-            memcpy(c_l->tag[i], me->tag[i], TAG_BYTES);
-            
-        }
-        c_l->tag[num_models] = NULL;
-    #endif
+        load_model_to_memory(&m, me->tags, num_models);
 
         char *id_str = insert_into_table(table, m);
         if (!id_str) {
@@ -675,6 +592,24 @@ handle_request(char *client_request, onnx_table *table)
             free(client_request);
             return NULL;
         }
+
+    #if USE_MEMORY_ONLY == 0
+        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
+        for (int i = 0; i < num_models; ++i) {
+            c_l->tag[i] = (unsigned char *) malloc((TAG_BYTES * 2 + 1) * sizeof(unsigned char));
+            if (!c_l->tag[i]) {
+                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
+                free_request(&req_copy);
+                free(client_request);
+                free_encrypted_models_info(me, num_models);
+                free(c_l->result);
+                return NULL;
+            }
+            memcpy(c_l->tag[i], me->tags[i], TAG_BYTES * 2);
+            c_l->tag[i][TAG_BYTES * 2] = '\0';
+        }
+        c_l->tag[num_models] = NULL;
+    #endif
 
         memcpy(c_l->result, id_str, size);
         free_encrypted_models_info(me, num_models);
@@ -697,7 +632,7 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         }
 
- #if USE_MEMORY_ONLY == 1
+#if USE_MEMORY_ONLY == 1
         if (tags) {
             fprintf(stderr, "Invalid request for MODEL_INPUT for tags for memory-only\n");
             free_request(&req_copy);
@@ -712,7 +647,7 @@ handle_request(char *client_request, onnx_table *table)
 #endif
 
         for (int i = 0; i < num_inputs; i++) {
-            fprintf(stderr, "INPUT SIZE[%d]: %d\n", i, size_inputs[i]);
+            fprintf(stderr, "INPUT SIZE[%d]: %ld\n", i, size_inputs[i]);
         }
 
         int required_size = snprintf(NULL, 0, "%d", id);
@@ -722,14 +657,14 @@ handle_request(char *client_request, onnx_table *table)
         char *result = NULL;
         model *m = get_model(table, id_str);
         if (!m) {
-            char *error = (char *) malloc(512 * sizeof(char));
+            char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
                 fprintf(stderr, "Error allocating memory for error\n");
                 return NULL;
             }
-            snprintf(error, 512, "Model with id %d not found\n", id);
-            error[511] = '\0';
-            c_l->size = 512;
+            snprintf(error, SMALL_SIZE, "Model with id %d not found\n", id);
+            error[SMALL_SIZE - 1] = '\0';
+            c_l->size = SMALL_SIZE;
             c_l->result = (unsigned char *) malloc((c_l->size + 1) * sizeof(unsigned char));
             if (!c_l->result) {
                 fprintf(stderr, "Memory allocation failed for c_l->result in MODEL\n");
@@ -769,7 +704,11 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(c_l->result, result, size);
         c_l->size = size;
 
-        free(result);
+        if (tokenizer) {
+            tract_free_cstring(result);
+        } else {
+            free(result);
+        }
 
         break;
     }
@@ -901,7 +840,7 @@ main(void)
     /*
      * 4. Setup stuff
      */
-    fprintf(stderr, "Setting up the SSL data....");
+    fprintf(stderr, "Setting up the SSL data...");
     fflush(stdout);
 
     if ((ret = mbedtls_ssl_config_defaults(&conf,
@@ -936,11 +875,10 @@ main(void)
 
     onnx_table *table = init_onnx_table(CAPACITY);
     char response[BUF_SIZE];
-    long request_size = 0, response_size = 0;
-    char *client_request = NULL;
-    size_t bytes_read = 0;
     unsigned char buf[BUF_SIZE];
-    char *endptr;
+    char *client_request = NULL;
+    size_t bytes_read, request_size = 0;
+    char *endptr = NULL;
 
 reset:
 #ifdef MBEDTLS_ERROR_C
@@ -951,6 +889,7 @@ reset:
     }
 #endif
 
+    fprintf(stderr, "Resetting the session...");
     mbedtls_net_free(&client_fd);
 
     mbedtls_ssl_session_reset(&ssl);
@@ -958,7 +897,7 @@ reset:
     /*
      * 3. Wait until a client connects
      */
-    fprintf(stderr, "\n\nWaiting for a remote connection ...");
+    fprintf(stderr, "\n\nWaiting for a remote connection...");
     fflush(stdout);
 
     if ((ret = mbedtls_net_accept(&listen_fd, &client_fd,
@@ -1030,7 +969,7 @@ reset:
         }
         fprintf(stderr, "Bytes received: %d\n Message from client: %ld\n", ret, request_size);
 
-        if (ret == 3 && request_size == 20) {
+        if (ret == 3 && request_size == 24) {
             fprintf(stderr, "Client wants to close the connection...\n");
             free_onnx_table(table);
             ret = 0;
@@ -1043,35 +982,46 @@ reset:
             goto exit;
         }
 
+        char *chunk_buffer = malloc(CHUNK_SIZE);
+        assert(chunk_buffer);
         bytes_read = 0;
-        while (bytes_read < (size_t) request_size) {
-            ret = mbedtls_ssl_read(&ssl, (unsigned char *) (client_request + bytes_read), request_size - bytes_read);
+        while (bytes_read < request_size) {
+            size_t to_read = (request_size - bytes_read > CHUNK_SIZE) ? CHUNK_SIZE : (request_size - bytes_read);
+            size_t chunk_offset = 0;
+            
+            while (chunk_offset < to_read) {
+                ret = mbedtls_ssl_read(&ssl, (unsigned char *) (chunk_buffer + chunk_offset), to_read - chunk_offset);
 
-            if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-                continue;
-            }
-
-            if (ret <= 0) {
-                switch (ret) {
-                    case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
-                        fprintf(stderr, " Connection was closed gracefully\n");
-                        break;
-
-                    case MBEDTLS_ERR_NET_CONN_RESET:
-                        fprintf(stderr, " Connection was reset by peer\n");
-                        break;
-
-                    default:
-                        fprintf(stderr, " mbedtls_ssl_read returned -0x%x\n", (unsigned int) -ret);
-                        free(client_request);
-                        goto reset;
+                if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+                    continue;
                 }
 
-                break;
+                if (ret <= 0) {
+                    switch (ret) {
+                        case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+                            fprintf(stderr, " Connection was closed gracefully\n");
+                            break;
+
+                        case MBEDTLS_ERR_NET_CONN_RESET:
+                            fprintf(stderr, " Connection was reset by peer\n");
+                            break;
+
+                        default:
+                            fprintf(stderr, " mbedtls_ssl_read returned -0x%x\n", (unsigned int) -ret);
+                            free(client_request);
+                            goto reset;
+                    }
+
+                    break;
+                }
+                chunk_offset += ret;
             }
-            bytes_read += ret;
+            memcpy(client_request + bytes_read, chunk_buffer, to_read);
+            bytes_read += to_read;
+            fprintf(stderr, "Chunk received: %lu bytes, Total received: %lu bytes\n", to_read, bytes_read);
         }
         client_request[request_size] = '\0';
+        free(chunk_buffer);
 
         fprintf(stderr, "Bytes received: %ld\n", bytes_read);
 
@@ -1094,13 +1044,10 @@ reset:
         if (c_l->tag) {
             for (size_t i = 0; c_l->tag[i] != NULL; ++i) {
                 response[current_position++] = ' '; // Add a space separator
-                fprintf(stderr, "Tag: ");
-                for (size_t j = 0; j < TAG_BYTES; ++j) {
-                    fprintf(stderr, "%02x", c_l->tag[i][j]);
-                    sprintf(response + current_position, "%02x", c_l->tag[i][j]);
-                    current_position += 2;
-                }
-                fprintf(stderr, "\n"); 
+                fprintf(stderr, "Tag: %s", c_l->tag[i]);
+                size_t tag_len = strlen((char *)c_l->tag[i]);
+                memcpy(response + current_position, c_l->tag[i], tag_len);
+                current_position += tag_len;
                 free(c_l->tag[i]);
             }
             free(c_l->tag);
@@ -1117,14 +1064,12 @@ reset:
 
     fprintf(stderr, "\nSSL ciphersuite: %s\n", mbedtls_ssl_get_ciphersuite(&ssl));
 
-    response_size = strlen(response);
-
 #ifdef USE_SYS_TIME
     gettimeofday(&t2_rest, NULL);
     gettimeofday(&t1_write, NULL);
 #endif
 
-    while ((ret = mbedtls_ssl_write(&ssl, (unsigned char *) response, response_size)) <= 0) {
+    while ((ret = mbedtls_ssl_write(&ssl, (unsigned char *) response, strlen(response))) <= 0) {
         if (ret == MBEDTLS_ERR_NET_CONN_RESET) {
             fprintf(stderr, " failed\n   peer closed the connection\n");
             goto reset;
@@ -1157,6 +1102,7 @@ reset:
 
 #else
     elapsed_time = 0.0;
+    elapsed_time_rest = 0.0;
     elapsed_time_read = 0.0;
     elapsed_time_write = 0.0;
     elapsed_time_handshake = 0.0;
