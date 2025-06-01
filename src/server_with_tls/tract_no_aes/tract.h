@@ -48,6 +48,8 @@ typedef enum TRACT_RESULT {
   TRACT_RESULT_KO = 1,
 } TRACT_RESULT;
 
+typedef struct MyInferenceModel MyInferenceModel;
+
 typedef struct TractFact TractFact;
 
 typedef struct TractInferenceFact TractInferenceFact;
@@ -154,14 +156,26 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
                                                 const char *path,
                                                 const struct TractModel *model);
 
-/**
- * Run the Albert example from the tract-onnx crate.
- * The returned char must be freed with tract_free_cstring().
- */
+void tract_free_onig(void);
+
 enum TRACT_RESULT tract_run_albert(const char *model_path,
                                    const uint8_t *tokenizer_buffer,
                                    uintptr_t tokenizer_buffer_size,
-                                   char **inference);
+                                   char **inference,
+                                   struct MyInferenceModel **inference_model);
+
+enum TRACT_RESULT tract_run_gpt2(const char *model_path,
+                                 const uint8_t *tokenizer_buffer,
+                                 uintptr_t tokenizer_buffer_size,
+                                 char **inference,
+                                 uintptr_t num_tokens,
+                                 struct MyInferenceModel **inference_model);
+
+enum TRACT_RESULT tract_run_latest_models(const char *model_path,
+                                          const uint8_t *tokenizer_buffer,
+                                          uintptr_t tokenizer_buffer_size,
+                                          char **inference,
+                                          uintptr_t num_tokens);
 
 /**
  * Creates an instance of an ONNX framework and parser that can be used to load models.

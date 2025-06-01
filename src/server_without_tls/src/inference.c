@@ -406,13 +406,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
 
     char *error = NULL;
     if (!m) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -527,9 +527,15 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
             }
         }
         char *inference = NULL;   
-        
+        int is_albert = strstr(model_name, "albert") != NULL;
+
         gettimeofday(&t1_inf, NULL);
-        check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, NULL), NULL);
+        if (is_albert) {
+            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
+        } else {
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, NULL), NULL);
+        }
+        
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
@@ -561,13 +567,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(iv);
         free(aad);
         free(params);
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "Number of tags should be the same as number of models");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "Number of tags should be the same as number of models");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -623,13 +629,13 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         free(iv);
         free(aad);
         free(params);
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "Model authentication is incorrect! Wrong EncryptionParams!");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "Model authentication is incorrect! Wrong EncryptionParams!");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -641,14 +647,14 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
     fprintf(stderr, "Inference time to run a model: %f ms\n", sum);
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
-    char *prediction = (char *) malloc(512 * sizeof(char));
+    char *prediction = (char *) malloc(SMALL_SIZE * sizeof(char));
     if (!prediction) {
         fprintf(stderr, "Error allocating memory for result\n");
         return NULL;
     }
 
-    snprintf(prediction, 512, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
-    prediction[511] = '\0';
+    snprintf(prediction, SMALL_SIZE, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
+    prediction[SMALL_SIZE - 1] = '\0';
     
     free(key);
     free(iv);
@@ -893,13 +899,13 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
 
     char *error = NULL;
     if (!m) {
-        error = (char *) malloc(512 * sizeof(char));
+        error = (char *) malloc(SMALL_SIZE * sizeof(char));
         if (!error) {
             fprintf(stderr, "Error allocating memory for error\n");
             return NULL;
         }
-        snprintf(error, 512, "No model found with the given id");
-        error[511] = '\0';
+        snprintf(error, SMALL_SIZE, "No model found with the given id");
+        error[SMALL_SIZE - 1] = '\0';
         return error;
     }
 
@@ -917,10 +923,15 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
                 break;
             }
         }
+        int is_albert = strstr(model_name, "albert") != NULL;
         
         gettimeofday(&t1_inf, NULL);
-        check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS), NULL);
-        
+        if (is_albert) {
+            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL), NULL);
+        } else {
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS), NULL);
+        }
+                
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
@@ -1039,14 +1050,14 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
 #endif
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
-    char *prediction = (char *) malloc(512 * sizeof(char));
+    char *prediction = (char *) malloc(SMALL_SIZE * sizeof(char));
     if (!prediction) {
         fprintf(stderr, "Error allocating memory for result\n");
         return NULL;
     }
 
-    snprintf(prediction, 512, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
-    prediction[511] = '\0';
+    snprintf(prediction, SMALL_SIZE, "Model %s, Inference: Max is %f for category %d!", m->names[model_count-1], last_node->pred, last_node->category);
+    prediction[SMALL_SIZE - 1] = '\0';
     return prediction;
 }
 #endif

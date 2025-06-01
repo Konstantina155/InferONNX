@@ -24,6 +24,8 @@
 #define TAG_BYTES 16
 #define ADD_DATA_BYTES 64
 #define BUF_SIZE 4096
+#define SMALL_SIZE 512
+#define CHUNK_SIZE (100L * 1024 * 1024)
 
 #define HASH_MULTIPLIER 65599
 #define CAPACITY 3000
@@ -34,22 +36,22 @@ typedef struct __attribute__((packed)) {
     int num_models;
     int num_inputs;
     char **names;
-    int *size_models;
+    uint64_t *size_models;
     uint8_t **models;
-    int* size_inputs;
+    uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
-    int tokenizer_size;
+    uint64_t tokenizer_size;
     uint8_t *tokenizer; 
 } request;
 
 typedef struct encrypted_models_info
 {
-    unsigned char **encrypted_model;
+    unsigned char **encrypted_models;
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
-    unsigned char **tag;
+    unsigned char **tags;
 } encrypted_models_info;
 
 typedef struct client_result

@@ -3,8 +3,10 @@ USE_SYS_TIME_OPERATORS ?= 0
 USE_OCCLUM ?= 0
 USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
+USE_DEBUG ?= 0
+NUM_TOKENS ?= 10
 
-CFLAGS = -Wall -Wextra -pedantic -g
+CFLAGS = -Wall -Wextra -pedantic -g -std=gnu11
 LDFLAGS = -I../include -L ../lib -lmbedtls -lmbedx509 -lmbedcrypto
 
 ifeq ($(USE_OCCLUM), 1)
@@ -32,6 +34,10 @@ ifeq ($(USE_AES), 1)
 else
 	LDFLAGS += -I../tract_no_aes -L../tract_no_aes -ltract -lm -lpthread -ldl
 endif
+ifeq ($(USE_DEBUG), 1)
+    CFLAGS += -DUSE_DEBUG
+endif
+CFLAGS += -DNUM_TOKENS=$(NUM_TOKENS)
 
 all: server occlum_server
 

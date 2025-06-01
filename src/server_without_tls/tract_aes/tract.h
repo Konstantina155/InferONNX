@@ -156,6 +156,8 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
                                                 const char *path,
                                                 const struct TractModel *model);
 
+void tract_free_onig(void);
+
 enum TRACT_RESULT tract_load_nlp_model(const char *model_path,
                                        const EncryptionParameters *params,
                                        const EncryptionParameters *params_weights,

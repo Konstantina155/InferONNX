@@ -885,6 +885,36 @@ process_file(const char *path, char ***filenames)
     return 1;
 }
 
+static void *
+assign_into_array(FILE *fd, int size, int element_size)
+{
+    void *data = malloc(size * element_size);
+    if (!data) {
+        fprintf(stderr, "Error allocating memory for file data\n");
+        return NULL;
+    }
+    assert(fread(data, element_size, size, fd) == (size_t)size);
+    return data;
+}
+
+int
+size_of_file(FILE *fd)
+{
+    if (fseek(fd, 0, SEEK_END) != 0) {
+        fprintf(stderr, "Error seeking end of file\n");
+        return -1;
+    }
+
+    long size = ftell(fd);
+    fprintf(stderr, "Size of file: %ld\n", size);
+    if (size == -1) {
+        fprintf(stderr, "Error getting size of file\n");
+        return -1;
+    }
+
+    return (int)size;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -900,6 +930,8 @@ main(int argc, char **argv)
     char **filenames = NULL;
     const char *path_or_file = argv[1];
     struct stat path_stat;
+    uint8_t *tokenizer = NULL; 
+    int tokenizer_size = 0;
 
     if (stat(path_or_file, &path_stat) != 0) {
         perror("stat");
@@ -913,6 +945,65 @@ main(int argc, char **argv)
     } else {
         fprintf(stderr, "The path is neither a valid directory nor an ONNX file.\n");
         return EXIT_FAILURE;
+    }
+
+    if (strstr(argv[2], "tokenizer.json") != NULL) {
+        FILE *fd = fopen(argv[2], "rb");
+        fprintf(stderr, "Input: %s\n", argv[2]);
+        if (!fd) {
+            fprintf(stderr, "Error opening input file\n");
+            return 1;
+        }
+
+        char *model_name;
+        for (int i = 0; i < num_models; ++i) {
+            if (strstr(filenames[i], "model.onnx_data") == NULL) {
+                model_name = filenames[i];
+                break;
+            }
+        }
+
+        tokenizer_size = size_of_file(fd);
+        if (tokenizer_size < 0) {
+            return 1;
+        }
+        rewind(fd);
+
+        tokenizer = (uint8_t *)assign_into_array(fd, tokenizer_size, sizeof(uint8_t));
+        if (!tokenizer) {
+            fprintf(stderr, "Error assigning image to array\n");
+            return 1;
+        }
+        fclose(fd);
+
+        char *inference = NULL;
+        MyInferenceModel *inference_models = NULL;
+        int is_albert = strstr(model_name, "albert") != NULL;
+
+#if USE_MEMORY_ONLY == 1        
+        tract_load_nlp_model(model_name, &inference_models);
+        assert(inference_models);    
+#endif
+        gettimeofday(&t1_inf, NULL);
+        if (is_albert) {
+            tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, inference_models ? &inference_models : NULL);
+        } else {
+            tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS);
+        }
+
+        gettimeofday(&t2_inf, NULL);
+        elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
+
+        fprintf(stderr, "%s\nInference time to run a model: %f ms\n", inference, elapsed_time);
+        tract_free_cstring(inference);
+        free(tokenizer);
+        for (int i = 0; i < num_models; i++) {
+            free(filenames[i]);
+        }
+        free(filenames);
+        tract_free_onig();
+        return 0;
     }
 
     TractValue **input_values = malloc((argc - 1) * sizeof(TractValue *));

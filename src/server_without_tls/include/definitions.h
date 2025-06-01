@@ -25,6 +25,8 @@
 #define TAG_BYTES 16
 #define ADD_DATA_BYTES 64
 #define BUF_SIZE 4096
+#define SMALL_SIZE 512
+#define CHUNK_SIZE (500L * 1024 * 1024)
 
 #define HASH_MULTIPLIER 65599
 #define CAPACITY 3000

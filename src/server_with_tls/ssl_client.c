@@ -21,11 +21,12 @@
 #include <unistd.h>
 
 #define SERVER_PORT "9998"
-#define SERVER_NAME "localhost"
+#define SERVER_NAME "139.91.92.32"
 
 #define DEBUG_LEVEL 1
 #define BUF_SIZE 4096
 #define TAG_SIZE 16
+#define CHUNK_SIZE (100L * 1024 * 1024)
 
 typedef struct __attribute__((packed)) {
     int command;
@@ -33,13 +34,13 @@ typedef struct __attribute__((packed)) {
     int num_models;
     int num_inputs;
     char **names;
-    int *size_models;
+    uint64_t *size_models;
     uint8_t **models;
-    int* size_inputs;
+    uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
-    int tokenizer_size;
-    uint8_t *tokenizer; 
+    uint64_t tokenizer_size;
+    uint8_t *tokenizer;
 } request;
 
 /* HELPER FUNCTIONS */
@@ -192,9 +193,9 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int* field
+    // Uint64_t* field
     if (req->size_models != NULL && size > 0) {
-        bytes += size * sizeof(int);
+        bytes += size * sizeof(uint64_t);
     }
 
     // Uint8_t** field
@@ -204,9 +205,9 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int* field
+    // Uint64_t* field
     if (req->size_inputs != NULL && num_inputs > 0) {
-        bytes += num_inputs * sizeof(int);
+        bytes += num_inputs * sizeof(uint64_t);
     }
 
     // Float** field
@@ -225,8 +226,8 @@ calculate_buffer_size(const request* req)
         }
     }
 
-    // Int field -> tokenizer_size
-    bytes += sizeof(int);
+    // Uint64_t field -> tokenizer_size
+    bytes += sizeof(uint64_t);
     
     // Uint8_t* tokenizer field
     if (req->tokenizer != NULL && req->tokenizer_size > 0) {
@@ -266,8 +267,8 @@ serialize_client_request(const request* req, ssize_t buffer_len)
 
     // Int* field -> size_models
     if (req->size_models != NULL && size > 0) {
-        memcpy(buffer + bytes, req->size_models, size * sizeof(int));
-        bytes += size * sizeof(int);
+        memcpy(buffer + bytes, req->size_models, size * sizeof(uint64_t));
+        bytes += size * sizeof(uint64_t);
     }
 
     // Uint8_t** field -> models
@@ -282,8 +283,8 @@ serialize_client_request(const request* req, ssize_t buffer_len)
 
     // Int* field -> size_inputs
     if (req->size_inputs != NULL && num_inputs > 0) {
-        memcpy(buffer + bytes, req->size_inputs, num_inputs * sizeof(int));
-        bytes += num_inputs * sizeof(int);
+        memcpy(buffer + bytes, req->size_inputs, num_inputs * sizeof(uint64_t));
+        bytes += num_inputs * sizeof(uint64_t);
     }
 
     // Float** field -> input
@@ -304,9 +305,9 @@ serialize_client_request(const request* req, ssize_t buffer_len)
         }
     }
 
-    // Int field -> tokenizer_size
-    memcpy(buffer + bytes, &req->tokenizer_size, sizeof(int));
-    bytes += sizeof(int);
+    // Uint64_t field -> tokenizer_size
+    memcpy(buffer + bytes, &req->tokenizer_size, sizeof(uint64_t));
+    bytes += sizeof(uint64_t);
 
     // Uint8_t* field -> tokenizer
     if (req->tokenizer != NULL && req->tokenizer_size > 0) {
@@ -424,10 +425,18 @@ send_request(char *client_request, size_t request_len, int mode)
     /*
      * 0. Initialize certificates
      */
-    fprintf(stderr, "Loading the CA root certificate ...");
+    fprintf(stderr, "Loading the CA root certificate...");
     fflush(stdout);
 
-    ret = mbedtls_x509_crt_parse_file(&cacert, "../certificates/cert.pem");
+    char *cert_path = NULL;
+#ifdef USE_DEBUG
+    cert_path = "../../../certificates/cert.pem";
+#else
+    cert_path = "../certificates/cert.pem";
+#endif
+    //cert_path = "certificates/cert.pem";
+
+    ret = mbedtls_x509_crt_parse_file(&cacert, cert_path);
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_x509_crt_parse_file returned %d\n", (unsigned int) - ret);
         goto exit;
@@ -549,12 +558,20 @@ send_request(char *client_request, size_t request_len, int mode)
 
     total_written = 0;
     while (total_written < request_len) {
-        ret = mbedtls_ssl_write(&ssl, (unsigned char *)(client_request + total_written), request_len - total_written);
-        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE && ret < 0) {
-            fprintf(stderr, " failed\n   mbedtls_ssl_write returned %d\n", ret);
-            goto exit;
+        size_t to_send = (request_len - total_written > CHUNK_SIZE) ? CHUNK_SIZE : (request_len - total_written);
+        size_t sent_chunk = 0;
+
+        while (sent_chunk < to_send) {
+            ret = mbedtls_ssl_write(&ssl, (unsigned char *)(client_request + total_written + sent_chunk), to_send - sent_chunk);
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE && ret < 0) {
+                fprintf(stderr, " failed\n   mbedtls_ssl_write returned %d\n", ret);
+                goto exit;
+            }
+            sent_chunk += ret;
         }
-        total_written += ret;
+
+        total_written += to_send;   
+        fprintf(stderr, "Chunk sent: %lu bytes, Total sent: %lu bytes\n", to_send, total_written);
     }
 
     fprintf(stderr, "Bytes written for message: %ld\n\n", total_written);
@@ -599,6 +616,7 @@ send_request(char *client_request, size_t request_len, int mode)
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
     if (mode == 1) {
+#ifndef USE_DEBUG
         FILE *fd = NULL;
     #ifdef USE_OCCLUM
         #if USE_MEMORY_ONLY == 1
@@ -631,18 +649,27 @@ send_request(char *client_request, size_t request_len, int mode)
         return;
     }
 
-#if USE_SYS_TIME_OPERATORS == 0
-    #if USE_SYS_TIME == 0
-        if (fprintf(fd, "Total time - client: %f ms\n", elapsed_time) < 0) {
-            fprintf(stderr, "Error writing to file\n");
-        }
-    #else
-        if (fprintf(fd, "Total time - client with gettimeofday: %f ms\n", elapsed_time) < 0) {
-            fprintf(stderr, "Error writing to file\n");
-        }
+    #if USE_SYS_TIME_OPERATORS == 0
+        #if USE_SYS_TIME == 0
+            if (fprintf(fd, "Total time - client: %f ms\n", elapsed_time) < 0) {
+                fprintf(stderr, "Error writing to file\n");
+            }
+        #else
+            if (fprintf(fd, "Total time - client with gettimeofday: %f ms\n", elapsed_time) < 0) {
+                fprintf(stderr, "Error writing to file\n");
+            }
+        #endif
+    #endif
+        fclose(fd);
+#else
+    #if USE_SYS_TIME_OPERATORS == 0
+        #if USE_SYS_TIME == 0
+            fprintf(stderr, "Total time - client: %f ms\n", elapsed_time);
+        #else
+            fprintf(stderr, "Total time - client with gettimeofday: %f ms\n", elapsed_time);
+        #endif
     #endif
 #endif
-    fclose(fd);
     }
 
     mbedtls_ssl_close_notify(&ssl);
@@ -701,7 +728,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     size_t *temp_shape = NULL;
 
     int num_inputs = get_array_size((void **)input_files) - 1;
-    req_original.size_inputs = (int *)malloc(num_inputs * sizeof(int));
+    req_original.size_inputs = (uint64_t *)malloc(num_inputs * sizeof(uint64_t));
     assert(req_original.size_inputs);
 
     req_original.num_inputs = num_inputs;
@@ -760,7 +787,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 
     req_original.models = (uint8_t **) malloc((req_original.num_models + 1) * sizeof(uint8_t *));
     assert(req_original.models);
-    req_original.size_models = (int *) malloc(req_original.num_models * sizeof(int));
+    req_original.size_models = (uint64_t *) malloc(req_original.num_models * sizeof(uint64_t));
     assert(req_original.size_models);
     for (int i = 0; i < req_original.num_models; i++) {
         char full_path[1024];
@@ -816,44 +843,52 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     char *buffer = serialize_client_request(&req_original, bufLen);
     buffer[bufLen] = '\0';
 
+#ifndef USE_DEBUG
         FILE *fd = NULL;
-#ifdef USE_OCCLUM
-    #if USE_MEMORY_ONLY == 1
-        #if USE_STRIP == 1
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
+    #ifdef USE_OCCLUM
+        #if USE_MEMORY_ONLY == 1
+            #if USE_STRIP == 1
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
+            #else
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
+            #endif
         #else
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
+            #if USE_AES == 1
+                #if USE_STRIP == 1
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                #else
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
+                #endif
+            #else
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+            #endif
         #endif
     #else
         #if USE_AES == 1
-            #if USE_STRIP == 1
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
-            #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
-            #endif
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
         #else
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
         #endif
     #endif
+
+        if (!fd) {
+            fprintf(stderr, "Error opening inference_time!\n");
+            return;
+        }
+
+    #if USE_SYS_TIME_OPERATORS == 0
+        #if USE_SYS_TIME == 0
+            fprintf(fd, "\nModel: %s\n", req_original.names[0]);
+        #endif
+    #endif
+        fclose(fd);
 #else
-    #if USE_AES == 1
-        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
-    #else
-        fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+    #if USE_SYS_TIME_OPERATORS == 0
+        #if USE_SYS_TIME == 0
+            fprintf(stderr, "\nModel: %s\n", req_original.names[0]);
+        #endif
     #endif
 #endif
-
-    if (!fd) {
-        fprintf(stderr, "Error opening inference_time!\n");
-        return;
-    }
-
-#if USE_SYS_TIME_OPERATORS == 0
-    #if USE_SYS_TIME == 0
-        fprintf(fd, "\nModel: %s\n", req_original.names[0]);
-    #endif
-#endif
-    fclose(fd);
 
     send_request(buffer, bufLen, 0);
     
@@ -893,7 +928,7 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
     size_t *temp_shape = NULL;
 
     int num_inputs = get_array_size((void **)input_names);
-    req_original.size_inputs = (int *)malloc(num_inputs * sizeof(int));
+    req_original.size_inputs = (uint64_t *)malloc(num_inputs * sizeof(uint64_t));
     assert(req_original.size_inputs);
   
     req_original.num_inputs = num_inputs;
@@ -945,7 +980,7 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
             }
 
             req_original.size_inputs[i] = temp_calculated_shape;
-            fprintf(stderr, "Size of input: %d\n", req_original.size_inputs[i]);
+            fprintf(stderr, "Size of input: %ld\n", req_original.size_inputs[i]);
 
             fclose(fd);
 
