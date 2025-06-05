@@ -176,6 +176,7 @@ enum TRACT_RESULT tract_run_gpt2(const char *model_path,
                                  char **inference,
                                  const EncryptionParameters *params,
                                  uintptr_t num_tokens,
+                                 const char *prompt,
                                  struct MyInferenceModel **inference_model);
 
 enum TRACT_RESULT tract_run_latest_models(const char *model_path,
@@ -185,6 +186,7 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           const EncryptionParameters *params,
                                           const EncryptionParameters *params_weights,
                                           uintptr_t num_tokens,
+                                          const char *prompt,
                                           struct MyInferenceModel **inference_model);
 
 /**
