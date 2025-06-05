@@ -535,7 +535,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
         if (is_albert) {
             check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL), NULL);
         } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS), NULL);
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, "Hi"), NULL);
         }
 
         gettimeofday(&t2_inf, NULL);
@@ -1061,7 +1061,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         if (is_albert) {
             check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
         } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, NULL), NULL);
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, "Hi", NULL), NULL);
         }
 #ifdef USE_SYS_TIME
         gettimeofday(&t2_inf, NULL);
