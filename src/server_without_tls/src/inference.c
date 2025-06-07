@@ -173,11 +173,16 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     assert(io);
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
+    int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
+                 (strstr(names[0], "albert") != NULL) || 
+                 (strstr(names[0], "gpt") != NULL) || 
+                 (strstr(names[0], "llama") != NULL) || 
+                 (strstr(names[0], "mistral") != NULL) ||
+                 (strstr(names[0], "deepseek") != NULL)
+                 ? 1 : 0;
+
     for (int i = 1; i < model_count + 1; i++) {
-        if (strstr(names[i-1], "model.onnx_data") != NULL ||
-            strstr(names[i-1], "qwen") != NULL || 
-            strstr(names[i-1], "llama") != NULL ||
-            strstr(names[i-1], "deepseek") != NULL) {
+        if (is_llm) {
             inference_models[i] = NULL;
         } else {
             tag = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
@@ -706,11 +711,16 @@ load_model_to_memory(model **m)
     assert(io);
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
+    int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
+                 (strstr(names[0], "albert") != NULL) || 
+                 (strstr(names[0], "gpt") != NULL) || 
+                 (strstr(names[0], "llama") != NULL) || 
+                 (strstr(names[0], "mistral") != NULL) ||
+                 (strstr(names[0], "deepseek") != NULL)
+                 ? 1 : 0;
+
     for (int i = 1; i < model_count + 1; i++) {
-        if (strstr(names[i-1], "model.onnx_data") != NULL ||
-            strstr(names[i-1], "qwen") != NULL || 
-            strstr(names[i-1], "llama") != NULL ||
-            strstr(names[i-1], "deepseek") != NULL) {
+        if (is_llm) {
             inference_models[i] = NULL;
         } else {
             inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i]);

@@ -5,6 +5,7 @@ USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
 USE_STRIP ?= 0
 USE_DEBUG ?= 0
+NUM_TOKENS ?= 10
 
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
@@ -37,6 +38,7 @@ endif
 ifeq ($(USE_DEBUG), 1)
 	CFLAGS += -DUSE_DEBUG
 endif
+CFLAGS += -DNUM_TOKENS=$(NUM_TOKENS)
 
 all: ssl_client
 

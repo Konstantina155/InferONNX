@@ -878,14 +878,14 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 
     #if USE_SYS_TIME_OPERATORS == 0
         #if USE_SYS_TIME == 0
-            fprintf(fd, "\nModel: %s\n", req_original.names[0]);
+            fprintf(fd, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
         #endif
     #endif
         fclose(fd);
 #else
     #if USE_SYS_TIME_OPERATORS == 0
         #if USE_SYS_TIME == 0
-            fprintf(stderr, "\nModel: %s\n", req_original.names[0]);
+            fprintf(stderr, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
         #endif
     #endif
 #endif

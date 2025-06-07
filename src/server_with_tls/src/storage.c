@@ -1,7 +1,7 @@
 #include <storage.h>
 
 //Hash table for storing the models
-// id -> model_names, key, IV, AAD, TractInferenceModels
+// id -> model_names, key, IV, AAD, TractInferenceModels, MyInferenceModel (for llm's)
 static unsigned int
 hash_function(const char* id)
 {
@@ -181,7 +181,7 @@ free_inference_model(TractInferenceModel *inference_model)
 }
 
 void
-free_inference_models(TractInferenceModel **inference_models, int length)
+free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length)
 {
     assert(inference_models);
     for (int i = 0; i < (length + 1); ++i) {
@@ -189,6 +189,7 @@ free_inference_models(TractInferenceModel **inference_models, int length)
             free_inference_model(inference_models[i]);
         }
     }
+    if (my_inference_models) free(my_inference_models);
     free(inference_models);
 }
 
@@ -215,7 +216,7 @@ deallocate_model(model *current)
         free(current->names[i]);
     }
     free(current->names);
-    if (current->inference_models) free_inference_models(current->inference_models, current->size + 1);
+    if (current->inference_models) free_inference_models(current->inference_models, current->my_inference_models, current->size + 1);
     char **visited_nodes = (char **) malloc((current->size + 1) * sizeof(char *));
     int visited_count = 0;
     free_operator_node(current->head, visited_nodes, &visited_count);
@@ -306,6 +307,11 @@ print_models(model *m, int index)
             fprintf(stderr, ",\n   TractInferenceModel: (not null)");
         } else {
             fprintf(stderr, ",\n   TractInferenceModel: (null)");
+        }
+        if (current->my_inference_models) {
+            fprintf(stderr, ",\n   MyInferenceModel: (not null)");
+        } else {
+            fprintf(stderr, ",\n   MyInferenceModel: (null)");
         }
         if (current->head) {
             fprintf(stderr, ",\n   operator_node: (not null)");
