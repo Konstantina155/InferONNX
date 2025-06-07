@@ -163,6 +163,20 @@ enum TRACT_RESULT tract_load_nlp_model(const char *model_path,
                                        const EncryptionParameters *params_weights,
                                        struct MyInferenceModel **inference_model);
 
+enum TRACT_RESULT tract_my_inference_model_input_count(const struct MyInferenceModel *model,
+                                                       uintptr_t *inputs);
+
+enum TRACT_RESULT tract_my_inference_model_output_count(const struct MyInferenceModel *model,
+                                                        uintptr_t *outputs);
+
+enum TRACT_RESULT tract_my_inference_model_input_name(const struct MyInferenceModel *model,
+                                                      uintptr_t input,
+                                                      char **name);
+
+enum TRACT_RESULT tract_my_inference_model_output_name(const struct MyInferenceModel *model,
+                                                       uintptr_t output,
+                                                       int8_t **name);
+
 enum TRACT_RESULT tract_run_albert(const char *model_path,
                                    const uint8_t *tokenizer_buffer,
                                    uintptr_t tokenizer_buffer_size,

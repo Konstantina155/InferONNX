@@ -602,6 +602,7 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->IV, me->IV, IV_BYTES);
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
         m->inference_models = NULL;
+        m->my_inference_models = NULL;
         m->head = NULL;
   
         load_model_to_memory(&m, me->tags, num_models);
@@ -658,6 +659,7 @@ handle_request(char *client_request, onnx_table *table)
         memset(m->IV, 0, IV_BYTES);
         memset(m->AAD, 0, ADD_DATA_BYTES);
         m->inference_models = NULL;
+        m->my_inference_models = NULL;
         
         load_model_to_memory(&m);
 
@@ -751,7 +753,7 @@ handle_request(char *client_request, onnx_table *table)
     #if USE_MEMORY_ONLY == 0
         result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
     #else
-        result = inference_memory_only(input, num_inputs, m);
+        result = inference_memory_only(input, num_inputs, tokenizer, tokenizer_size, m);
     #endif
 #else
         result = inference_no_aes(input, num_inputs, tokenizer, tokenizer_size, m);

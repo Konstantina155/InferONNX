@@ -640,12 +640,12 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         }
 
     #ifndef USE_SYS_TIME_OPERATORS
-        fprintf(fd, "\nModel: %s\n", req_original.names[0]);
+        fprintf(fd, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
     #endif
         fclose(fd); 
 #else
     #ifndef USE_SYS_TIME_OPERATORS
-        fprintf(stdout, "\nModel: %s\n", req_original.names[0]);
+        fprintf(stdout, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
     #endif
 #endif
 
