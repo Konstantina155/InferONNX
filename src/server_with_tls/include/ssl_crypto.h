@@ -16,12 +16,7 @@
 #include <mbedtls/ssl_cache.h>
 #endif
 
-#define HTTP_RESPONSE \
-    "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n" \
-    "<h2>Mbed TLS Test Server</h2>\r\n" \
-    "<p>Successful connection using: %s</p>\r\n"
-
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 1
 
 void debug_ssl(void *ctx, int level, const char *file, int line, const char *str);
 

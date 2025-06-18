@@ -988,7 +988,7 @@ main(int argc, char **argv)
         if (is_albert) {
             tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, inference_models ? &inference_models : NULL);
         } else {
-            tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS);
+            tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, "Hi");
         }
 
         gettimeofday(&t2_inf, NULL);

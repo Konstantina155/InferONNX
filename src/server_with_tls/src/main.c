@@ -5,7 +5,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <inference.h>
-#include <ssl_crypto.h>
 
 /* HELPER FUNCTIONS */
 static void
@@ -526,7 +525,7 @@ free_request(request *req_original)
 }
 
 client_result *
-handle_request(char *client_request, onnx_table *table)
+handle_request(char *client_request, onnx_table *table, mbedtls_ssl_context *ssl)
 {
     assert(client_request);
     
@@ -751,7 +750,7 @@ handle_request(char *client_request, onnx_table *table)
 
 #ifdef USE_AES
     #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
+        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size, ssl);
     #else
         result = inference_memory_only(input, num_inputs, tokenizer, tokenizer_size, m);
     #endif
@@ -1111,7 +1110,7 @@ reset:
     gettimeofday(&t1_rest, NULL);
 #endif
 
-    client_result *c_l = handle_request(client_request, table);
+    client_result *c_l = handle_request(client_request, table, &ssl);
     if (!c_l) {
         strcpy(response, "Invalid client_request from handle_request\n");
     } else {

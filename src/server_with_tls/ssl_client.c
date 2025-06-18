@@ -434,7 +434,7 @@ send_request(char *client_request, size_t request_len, int mode)
 #else
     cert_path = "../certificates/cert.pem";
 #endif
-    //cert_path = "certificates/cert.pem";
+    cert_path = "certificates/cert.pem";
 
     ret = mbedtls_x509_crt_parse_file(&cacert, cert_path);
     if (ret != 0) {
@@ -473,6 +473,10 @@ send_request(char *client_request, size_t request_len, int mode)
     }
 
     fprintf(stderr, " ok\n");
+    
+    /*addition*/
+    mbedtls_ssl_conf_read_timeout(&conf, 5000);
+    mbedtls_ssl_conf_handshake_timeout(&conf, 1000, 10000);
 
     /* OPTIONAL is not optimal for security,
      * but makes interop easier in this simplified example */
@@ -491,7 +495,8 @@ send_request(char *client_request, size_t request_len, int mode)
         goto exit;
     }
 
-    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
+    /*addition, last parameter was NULL*/
+    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
 
     /*
      * 4. Handshake
@@ -500,7 +505,6 @@ send_request(char *client_request, size_t request_len, int mode)
     fflush(stdout);
 
     while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
-        goto exit;
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
             fprintf(stderr, " failed\n   mbedtls_ssl_handshake returned -0x%x\n",
                            (unsigned int) -ret);
@@ -586,9 +590,15 @@ send_request(char *client_request, size_t request_len, int mode)
         len = BUF_SIZE - 1;
         memset(input, 0, BUF_SIZE);
         ret = mbedtls_ssl_read(&ssl, input, len);
+
+        /*addition*/
+        if (ret == MBEDTLS_ERR_SSL_TIMEOUT) {
+            printf("Timeout: No data received in 5 seconds\n");
+            continue;
+        }
         
         if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-            fprintf(stderr, "continue\n");
+            fprintf(stderr, "Unexpected: SSL operation would block (WANT_READ/WRITE) in blocking mode.\n");
             continue;
         }
 
@@ -608,6 +618,14 @@ send_request(char *client_request, size_t request_len, int mode)
         }
 
         len = ret;
+        
+        /*addition*/
+        input[len] = '\0';
+        if (strncmp((char*)input, "KEEPALIVE", 9) == 0) {
+            printf("Client: Received keep-alive - server is still processing...\n");
+            continue;
+        }
+
         fprintf(stderr, " %d bytes \nMessage from server: %s\n", len, input);
     } while (1);
 
@@ -878,14 +896,22 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
 
     #if USE_SYS_TIME_OPERATORS == 0
         #if USE_SYS_TIME == 0
-            fprintf(fd, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
+            if (strcmp(req_original.names[0], "model.onnx_data") == 0) {
+                fprintf(fd, "\nModel: %s for %d tokens\n", req_original.names[1], NUM_TOKENS);
+            } else {
+                fprintf(fd, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
+            }
         #endif
     #endif
         fclose(fd);
 #else
     #if USE_SYS_TIME_OPERATORS == 0
         #if USE_SYS_TIME == 0
-            fprintf(stderr, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
+            if (strcmp(req_original.names[0], "model.onnx_data") == 0) {
+                fprintf(stderr, "\nModel: %s for %d tokens\n", req_original.names[1], NUM_TOKENS);
+            } else {
+                fprintf(stderr, "\nModel: %s for %d tokens\n", req_original.names[0], NUM_TOKENS);
+            }
         #endif
     #endif
 #endif
