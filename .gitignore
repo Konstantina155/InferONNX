@@ -4,6 +4,7 @@ src/*/inference_time_*
 memory_intensive_ops/
 src/*/tag_file.txt
 *.o
+src/*/scripts/standalone_inference
 src/*/src/occlum_server
 src/*/src/server
 src/*/ssl_client
