@@ -107,7 +107,12 @@ def main():
         path_to_store_ops = Path(f"../../../models/{model_dir}/operators")
         process_model(model_dir, path_to_store_ops)
 
-        test_path = f"../../../models/{model_dir}/test_data_set_0/input_0.pb"
+        test_path = f"../../../models/{model_dir}/test_data_set_0/"
+        if model_dir == 'albert-large-v2' or model_dir == 'gpt2':
+            test_path += 'tokenizer.json'
+        else:
+            test_path += 'input_0.pb'
+
         inference_operators = run_inference(f"{path_to_store_ops}/", test_path)
         inference_whole = run_inference(f"../../../models/{model_dir}/", test_path)
 

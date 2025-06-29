@@ -18,11 +18,11 @@ def run_command_without_output(cmd, cwd=None):
     process = subprocess.Popen(cmd, cwd=cwd, shell=True)
     process.wait()
 
-def init_client(use_sys_time):
+def init_client(use_sys_time, num_tokens):
     use_sys_time_operators = 1 if configuration == "memory_only_operators" else 0
-    use_memory_only = 0 if configuration == "on_disk" else 1
+    use_memory_only = 0 if configuration == "on_disk" or configuration == "memory_only_operators" else 1
 
-    build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
+    build_flags = f"NUM_TOKENS={num_tokens} USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
     run_command_without_output(f"make clean && make {build_flags} occlum_server", cwd=f"{server_with_tls_path}/src")
     run_command_without_output(f"make clean && make {build_flags}", cwd=server_with_tls_path)
 
@@ -49,23 +49,30 @@ def extract_hex_numbers(text):
         print("No hex numbers found.")
     
 def client_side(partition_folder, unique_id):
-    tme.sleep(65)
+    if "gpt" in path[unique_id] or "qwen" in path[unique_id] \
+        or "llama" in path[unique_id] or "mistral" in path[unique_id]:
+        tme.sleep(200)
+    else:
+        tme.sleep(65)
 
     print(f"\nCurrent directory: {os.getcwd()}")
 
     path_ = f"{inferONNX_path}/models/{path[unique_id]}"
-    
+    input_file = f"{path_}test_data_set_0/input_0.pb"
+    if "gpt" in path[unique_id] or "qwen" in path[unique_id] \
+        or "llama" in path[unique_id] or "mistral" in path[unique_id]:
+        input_file = f"{path_}test_data_set_0/tokenizer.json"
 
-    command = f"{server_with_tls_path}/ssl_client models {path_}test_data_set_0/input_0.pb {path_}{partition_folder}"
+    command = f"{server_with_tls_path}/ssl_client models {input_file} {path_}{partition_folder}"
     result = run_command_with_output(command)
 
-    if configuration == "on_disk":
+    if configuration == "on_disk" or configuration == "memory_only_operators":
         extract_hex_numbers(result)
         tag_file = tag_file_path
     else:
         tag_file = ""
 
-    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {path_}test_data_set_0/input_0.pb"
+    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {input_file}"
     run_command_without_output(command)
     close_connection()
 
@@ -93,7 +100,7 @@ def manage_connection():
                 file.write("\nSGX\n----\n")
 
         for i in range(num_runs):
-            init_client(0)
+            init_client(0, num_tokens)
             client = threading.Thread(args=(partition_folder, unique_id),target=client_side)
             client.start()
 
@@ -107,13 +114,22 @@ def manage_connection():
             if configuration == "memory_only_operators":
                 continue
 
-            init_client(1)
+            if "gpt" in model_name or "qwen" in model_name \
+                or "llama" in model_name or "mistral" in model_name:
+                continue
+            
+            init_client(1, num_tokens)
             client = threading.Thread(args=(partition_folder, unique_id),target=client_side)
             client.start()
 
             command = f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server"
             result = run_command_with_output(command, cwd=f"{path_to_occlum}/occlum_workspace")
             client.join()
+
+            if "gpt" in model_name or "qwen" in model_name \
+                or "llama" in model_name or "mistral" in model_name:
+                continue
+            
             inference_times = extract_time(result)
             
             if configuration == "memory_only":
@@ -130,15 +146,16 @@ def close_connection():
     output.wait()
 
 def main():
-    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+    if len(sys.argv) != 6 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX> <num_tokens>")
         exit(1)
 
-    global configuration, entire_or_partition, num_runs, inferONNX_path
+    global configuration, entire_or_partition, num_runs, inferONNX_path, num_tokens
     configuration = sys.argv[1]
     entire_or_partition = sys.argv[2]
     num_runs = int(sys.argv[3])
     inferONNX_path = sys.argv[4]
+    num_tokens = int(sys.argv[5])
 
     if inferONNX_path == "./":
         inferONNX_path = os.getcwd()
@@ -157,8 +174,7 @@ def main():
     global partition_folder, occlum_user_space
     partition_folder = entire_or_partition if "partitions" in entire_or_partition else ""
     occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
-
-
+    # occlum_user_space = ["9GB", "14GB", "16GB"] for llm models
     manage_connection()
     run_command_without_output("make clean", cwd=server_with_tls_path)
     run_command_without_output("make clean", cwd=f"{server_with_tls_path}/src")

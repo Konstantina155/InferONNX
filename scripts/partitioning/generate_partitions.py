@@ -22,14 +22,14 @@ def run_command(command):
         output = subprocess.Popen(command, shell=True)
         output.wait() 
     except subprocess.CalledProcessError as e:
-        print(f"Command failed: {e}")
+        print(f"Command {command} failed with error: {e}")
         raise
 
 def run_command_with_output(cmd, cwd=None):
     output = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     out_stdout, out_stderr = output.communicate()
     if output.returncode != 0:
-        raise Exception(f"Command failed with error: {out_stderr.strip()}")
+        raise Exception(f"Command {cmd} failed with error: {out_stderr.strip()}")
     return out_stdout.decode('utf-8')
 
 def make_build():
@@ -419,7 +419,7 @@ def partition_model(heavy_ops_set, operators, model_name):
         print("FILL:", fill_inputs)
 
         standalone_partition = False
-        if any(output in heavy_ops_set for output in outputs):
+        if any(output in heavy_ops_set for output in outputs) or peak_memory_usage > EPC_SIZE:
                 standalone_partition = True
                 print(f"Memory usage before heavy-weight: {round(current_memory_usage-peak_memory_usage, 2)}, after: {round(peak_memory_usage, 2)} for file {operator}")
                 current_memory_usage = 0

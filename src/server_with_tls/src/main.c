@@ -525,7 +525,7 @@ free_request(request *req_original)
 }
 
 client_result *
-handle_request(char *client_request, onnx_table *table, mbedtls_ssl_context *ssl)
+handle_request(char *client_request, onnx_table *table)
 {
     assert(client_request);
     
@@ -750,7 +750,7 @@ handle_request(char *client_request, onnx_table *table, mbedtls_ssl_context *ssl
 
 #ifdef USE_AES
     #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size, ssl);
+        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
     #else
         result = inference_memory_only(input, num_inputs, tokenizer, tokenizer_size, m);
     #endif
@@ -1110,7 +1110,7 @@ reset:
     gettimeofday(&t1_rest, NULL);
 #endif
 
-    client_result *c_l = handle_request(client_request, table, &ssl);
+    client_result *c_l = handle_request(client_request, table);
     if (!c_l) {
         strcpy(response, "Invalid client_request from handle_request\n");
     } else {

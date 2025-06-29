@@ -1099,21 +1099,8 @@ execute_tree(operator_node *node, TractValue **input_values, double elapsed_time
     return elapsed_time;
 }
 
-void
-send_keepalive_callback(void* ssl_ptr)
-{
-    mbedtls_ssl_context* ssl = (mbedtls_ssl_context*)ssl_ptr;
-    const char* keepalive_msg = "KEEPALIVE\n";
-    int ret = mbedtls_ssl_write(ssl, (unsigned char*)keepalive_msg, strlen(keepalive_msg));
-    if (ret > 0) {
-        printf("Server: Sent keep-alive message\n");
-    } else {
-        printf("Server: Failed to send keep-alive: %d\n", ret);
-    }
-}
-
 char *
-inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags, mbedtls_ssl_context *ssl)
+inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags)
 {
 #ifdef USE_SYS_TIME
     struct timeval t1_inf, t2_inf;
@@ -1231,7 +1218,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         if (is_albert) {
             check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
         } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, "Hi", NULL, send_keepalive_callback, ssl), NULL);
+            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, "Hi", NULL), NULL);
         }
 #ifdef USE_SYS_TIME
         gettimeofday(&t2_inf, NULL);

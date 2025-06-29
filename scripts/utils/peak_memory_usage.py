@@ -113,7 +113,7 @@ def run_command(command):
         output.wait() 
     except subprocess.CalledProcessError as e:
         print(f"Command failed: {e}")
-        raise
+        exit(1)
 
 def main():
     path_to_models, input_files, output_file = parse_arguments()
