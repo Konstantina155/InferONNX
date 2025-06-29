@@ -201,9 +201,7 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           const EncryptionParameters *params_weights,
                                           uintptr_t num_tokens,
                                           const char *prompt,
-                                          struct MyInferenceModel **inference_model,
-                                          void (*keepalive_callback)(void*),
-                                          void *callback_data);
+                                          struct MyInferenceModel **inference_model);
 
 /**
  * Creates an instance of an ONNX framework and parser that can be used to load models.

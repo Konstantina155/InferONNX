@@ -11,7 +11,7 @@ def parse_execution_times_operators(file_content):
     first = True
     i = 0
     expected_step = 0
-    densenet_exceptions = ["conv4_10/x2_1", "conv5_7/x1/bn_3.low", "conv5_7/x2/bn_2", "conv5_7/x2/bn_3.low", "conv5_7/x2_1"]
+    densenet_exceptions = {"conv4_10/x2_1", "conv5_7/x1/bn_3.low", "conv5_7/x2/bn_2", "conv5_7/x2/bn_3.low", "conv5_7/x2_1"}
 
     for line in lines:
         if "Running step" in line:
@@ -45,7 +45,7 @@ def parse_execution_times_operators(file_content):
     result = [{"operator": op, "total_time_ms": time} for op, time in operators.items()]
     return result
 
-def parse_execution_times(file_content):
+def parse_execution_times(file_content, is_nlp):
     operators = {}
     lines = file_content.splitlines()
     previous_operator = None
@@ -53,12 +53,17 @@ def parse_execution_times(file_content):
     current_time = 0.0
     expected_step = 0
     begin_embed = False
+    nlp_exceptions = {"adhoc-source-0"}
 
     for line in lines:
         if "Running step" in line:
             parts = line.split('"')
-            step_info = int((parts[0].split(",")[0]).split("Running step")[1].strip())
-            
+
+            if (is_nlp and len(parts) > 1 and parts[1] in nlp_exceptions):
+                continue   
+
+            step_info = int((parts[0].split(",")[0]).split("Running step")[1].strip())   
+
             if len(parts) > 1:
                 if step_info != expected_step:
                     begin_embed = True
@@ -103,6 +108,7 @@ def find_similar_keys(config, flag):
         else:
             grouped_keys[key].append(key)
 
+    k = 0
     for base_key, related_keys in grouped_keys.items():
         if len(related_keys) > 1:
             combined_value = sum(config[key] for key in related_keys)
@@ -113,7 +119,9 @@ def find_similar_keys(config, flag):
             config[final_key] = combined_value
             for key in related_keys:
                 if key != final_key:
+                    k += 1
                     config.pop(key)
+    print("# keys to remove: ", k)      
     return config
 
 def find_keys(config):
@@ -125,7 +133,7 @@ def find_keys(config):
             config[previous_key] = config.get(previous_key, 0) + config[key]
             keys_to_remove.append(key)
         previous_key = key
-
+    if keys_to_remove: print("Removed: ", len(keys_to_remove))
     for key in keys_to_remove:
         config.pop(key)
     
@@ -137,19 +145,31 @@ def update_operator_times(config1, config2, model):
         config2[keys2[1]] = config2.get(keys2[1], 0) + config2.pop(keys2[0])
 
     keys1 = list(config1.keys())
-    config1[keys1[1]] = config1.get(keys1[1], 0) + config1.pop(keys1[0])          
+    config1[keys1[1]] = config1.get(keys1[1], 0) + config1.pop(keys1[0])
+    keys1.pop(0)
+
+    k = 1
+    nlp_exceptions = {'input_ids', 'attention_mask', 'token_type_ids'}
+    for exc in nlp_exceptions:
+        if exc in keys1:
+            k += 1
+            config1.pop(exc)
+            config2.pop(exc)
+    print("# keys to remove: ", k)      
 
     flag = False
     if model == "densenet_operators":
         flag = True
+    
     config1 = find_similar_keys(config1, flag)
     config2 = find_similar_keys(config2, False)
 
     return config1, config2
 
-def check_ops(s1, s2):    
+def check_ops(s1, s2):
+    print(len(s1))
     if len(s1) != len(s2):
-        print("Different number of operators")
+        print(f"Different number of operators: {len(s1)}, {len(s2)}")
         return False
     
     all_operators = set(s1.keys()).intersection(set(s2.keys()))
@@ -175,29 +195,31 @@ def process_file(file_path, output_file):
     with open(file_path, 'r') as f:
         file_content = f.read()
 
+    is_nlp = "gpt" in file_path or "llama" in file_path or "qwen" in file_path or "deepseek" in file_path or "mistral" in file_path
     is_op_file = "_operators.txt" in file_path
     label = "SGX-Files" if is_op_file else "SGX"
     split_sections = file_content.split(label)
 
     systems = [
-        parse_execution_times(section) if idx == 0 else (
-            parse_execution_times_operators(section) if is_op_file else parse_execution_times(section)
+        parse_execution_times(section, is_nlp) if idx == 0 else (
+            parse_execution_times_operators(section) if is_op_file else parse_execution_times(section, is_nlp)
         )
         for idx, section in enumerate(split_sections)
     ]
 
     s1 = {entry["operator"]: entry["total_time_ms"] for entry in systems[0]}
     s2 = {entry["operator"]: entry["total_time_ms"] for entry in systems[1]}
+    print(len(s1))
 
     if is_op_file:
         s1 = find_keys(s1)
         s2 = find_keys(s2)
-
     s1, s2 = update_operator_times(s1, s2, file_path[:-4]) 
+    print(len(s1))
 
     if not check_ops(s1, s2):
         return
-
+    
     overhead = calculate_overhead(s1, s2)
     heaviest = heaviest_operators(overhead)
 
@@ -216,6 +238,7 @@ def main():
     for file in os.listdir(base_dir):
         path = os.path.join(base_dir, file)
         if os.path.isfile(path):
+            print("Processing file:", path)
             process_file(path, output_file)
 
 if __name__ == "__main__":

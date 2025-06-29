@@ -494,7 +494,7 @@ free_request(request *req_original)
 }
 
 client_result *
-handle_request(char *client_request, onnx_table *table, mbedtls_ssl_context *ssl)
+handle_request(char *client_request, onnx_table *table)
 {
     assert(client_request);
     
@@ -681,7 +681,7 @@ handle_request(char *client_request, onnx_table *table, mbedtls_ssl_context *ssl
         }
 
 #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size, ssl);
+        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
 #else
         result = inference_memory_only(input, num_inputs, tokenizer, tokenizer_size, m);
 #endif
@@ -734,6 +734,20 @@ debug_ssl(void *ctx, int level,
 
     fprintf((FILE *) ctx, "%s:%04d: %s", file, line, str);
     fflush((FILE *) ctx);
+}
+
+//addition
+#include <netinet/tcp.h>
+int enable_keepalive(int sockfd) {
+    int keepalive = 1;
+    
+    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
+        perror("setsockopt SO_KEEPALIVE");
+        return -1;
+    }
+    
+    fprintf(stderr, "Keepalive enabled\n");
+    return 0;
 }
 
 int
@@ -838,6 +852,12 @@ main(void)
 
     fprintf(stderr, " ok\n");
 
+    // addition
+    if (enable_keepalive(listen_fd.fd) < 0) {
+        fprintf(stderr, "Failed to enable keepalive on listening socket\n");
+        goto exit;
+    }
+
     /*
      * 4. Setup stuff
      */
@@ -851,8 +871,6 @@ main(void)
         fprintf(stderr, " failed\n   mbedtls_ssl_config_defaults returned %d\n", ret);
         goto exit;
     }
-
-    mbedtls_ssl_conf_read_timeout(&conf, 30000); //addition
 
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_dbg(&conf, debug_ssl, stdout);
@@ -909,8 +927,7 @@ reset:
         goto exit;
     }
 
-    /*addition, last parameter was NULL*/
-    mbedtls_ssl_set_bio(&ssl, &client_fd, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
+    mbedtls_ssl_set_bio(&ssl, &client_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
     fprintf(stderr, " ok\n");
 
@@ -944,12 +961,6 @@ reset:
 
     do {
         ret = mbedtls_ssl_read(&ssl, (unsigned char *) buf, BUF_SIZE);
-
-        /*addition*/
-        if (ret == MBEDTLS_ERR_SSL_TIMEOUT) {
-            printf("Client idle for 30 seconds, closing connection\n");
-            break;
-        }
 
         if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
             continue;
@@ -1002,12 +1013,6 @@ reset:
             while (chunk_offset < to_read) {
                 ret = mbedtls_ssl_read(&ssl, (unsigned char *) (chunk_buffer + chunk_offset), to_read - chunk_offset);
 
-                /*addition*/
-                if (ret == MBEDTLS_ERR_SSL_TIMEOUT) {
-                    printf("Client idle for 30 seconds, closing connection\n");
-                    break;
-                }
-
                 if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
                     continue;
                 }
@@ -1051,7 +1056,7 @@ reset:
     gettimeofday(&t1_rest, NULL);
 #endif
 
-    client_result *c_l = handle_request(client_request, table, &ssl);
+    client_result *c_l = handle_request(client_request, table);
     if (!c_l) {
         strcpy(response, "Invalid client_request from handle_request\n");
     } else {

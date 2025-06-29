@@ -365,6 +365,20 @@ ssl_debug(void *ctx, int level,
     fflush((FILE *) ctx);
 }
 
+//addition
+#include <netinet/tcp.h>
+int enable_keepalive(int sockfd) {
+    int keepalive = 1;
+    
+    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
+        perror("setsockopt SO_KEEPALIVE");
+        return -1;
+    }
+    
+    fprintf(stderr, "Keepalive enabled\n");
+    return 0;
+}
+
 void
 send_request(char *client_request, size_t request_len, int mode)
 {
@@ -434,7 +448,7 @@ send_request(char *client_request, size_t request_len, int mode)
 #else
     cert_path = "../certificates/cert.pem";
 #endif
-    cert_path = "certificates/cert.pem";
+    // cert_path = "certificates/cert.pem"; for the largest LLM
 
     ret = mbedtls_x509_crt_parse_file(&cacert, cert_path);
     if (ret != 0) {
@@ -473,10 +487,6 @@ send_request(char *client_request, size_t request_len, int mode)
     }
 
     fprintf(stderr, " ok\n");
-    
-    /*addition*/
-    mbedtls_ssl_conf_read_timeout(&conf, 5000);
-    mbedtls_ssl_conf_handshake_timeout(&conf, 1000, 10000);
 
     /* OPTIONAL is not optimal for security,
      * but makes interop easier in this simplified example */
@@ -495,8 +505,13 @@ send_request(char *client_request, size_t request_len, int mode)
         goto exit;
     }
 
-    /*addition, last parameter was NULL*/
-    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
+    // addition
+    if (enable_keepalive(server_fd.fd) < 0) {
+        fprintf(stderr, "Failed to enable keepalive on listening socket\n");
+        goto exit;
+    }
+
+    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
     /*
      * 4. Handshake
@@ -590,12 +605,6 @@ send_request(char *client_request, size_t request_len, int mode)
         len = BUF_SIZE - 1;
         memset(input, 0, BUF_SIZE);
         ret = mbedtls_ssl_read(&ssl, input, len);
-
-        /*addition*/
-        if (ret == MBEDTLS_ERR_SSL_TIMEOUT) {
-            printf("Timeout: No data received in 5 seconds\n");
-            continue;
-        }
         
         if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
             fprintf(stderr, "Unexpected: SSL operation would block (WANT_READ/WRITE) in blocking mode.\n");
@@ -618,14 +627,6 @@ send_request(char *client_request, size_t request_len, int mode)
         }
 
         len = ret;
-        
-        /*addition*/
-        input[len] = '\0';
-        if (strncmp((char*)input, "KEEPALIVE", 9) == 0) {
-            printf("Client: Received keep-alive - server is still processing...\n");
-            continue;
-        }
-
         fprintf(stderr, " %d bytes \nMessage from server: %s\n", len, input);
     } while (1);
 

@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <stdint.h>
+#include <ssl_crypto.h>
 
 #if USE_SYS_TIME == 1 || USE_AES == 0
 #include <sys/time.h>

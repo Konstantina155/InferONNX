@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <storage.h>
-#include <ssl_crypto.h>
 
 #define check(call) do {                                                       \
     TRACT_RESULT result = (call);                                              \
@@ -30,7 +29,7 @@
         char *inference_memory_only(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m);
     #else
         void run_inference(operator_node **node, TractValue **input_values, struct EncryptionParameters *params);
-        char *inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags, mbedtls_ssl_context *ssl);
+        char *inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags);
     #endif
 #else
     void run_inference(operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
