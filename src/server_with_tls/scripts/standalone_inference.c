@@ -976,14 +976,18 @@ main(int argc, char **argv)
         }
         fclose(fd);
 
+        // TractValue **input_values = malloc(4 * sizeof(TractValue *));
+        // operator_node *head = NULL;
         char *inference = NULL;
         MyInferenceModel *inference_models = NULL;
         int is_albert = strstr(model_name, "albert") != NULL;
 
 #if USE_MEMORY_ONLY == 1        
         tract_load_nlp_model(model_name, &inference_models);
-        assert(inference_models);    
+        assert(inference_models);  
 #endif
+        // tract_value_from_bytes_llms(3, tokenizer, tokenizer_size, "Hi", &input_values);
+        // input_values[3] = NULL;
         gettimeofday(&t1_inf, NULL);
         if (is_albert) {
             tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, inference_models ? &inference_models : NULL);
