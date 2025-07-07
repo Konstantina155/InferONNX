@@ -1,4 +1,4 @@
-# Artifact for paper #104 InferONNX: Practical and Privacy-preserving Machine Learning Inference using Trusted Execution Environments
+# Work in progress
 
 ## Overview
 InferONNX is a lightweight TEE-based system for secure ONNX model inference using Intel SGX. It supports partitioning large models into smaller sub-models to fit within SGX memory constraints, enabling efficient and privacy-preserving inference directly from disk.
