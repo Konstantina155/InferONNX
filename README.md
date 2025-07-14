@@ -28,7 +28,7 @@ The evaluation primarily focuses on **latency** and **accuracy** as the key perf
 
 > The partitions used in the evaluation are generated and stored in subdirectories under the `models/` folder. Each subdirectory is named after its corresponding model.
 
-### Accuracy verification of Existing Partitions
+### Accuracy verification of Existing Partitions (Not in the paper)
 To ensure that model accuracy is preserved after partitioning, inference is performed on both the entire model and its partitions. To verify the accuracy of the partitions, run the below command (where `partitions/` is the folder containing the existing partitions):
 ```
 python3 scripts/check_accuracy.py partitions/
@@ -39,6 +39,7 @@ Two main plots and one table summarize the results:
 * Figure 1 in our paper: Execution time breakdown for five popular ML models.
 * Figure 4 in our paper: Performance evaluation across **InferONNX-on Disk with SGX**, **InferONNX-Memory only with SGX** and **InferONNX-without SGX**.
 * Figure 5 in our paper: Performance evaluation across entire models and their partitions using **InferONNX-on Disk with SGX**.
+> **Note** Consider that the paper contains the results from the automated partitioning and not the partitions already existing in the Github repository.
 * Table 2 in our paper: Performance evaluation across **InferONNX-Memory only without SGX** and **InferONNX-on Disk without SGX**
 
 To generate the plots and the CSV file for the table, run the below command (where `partitions/` is the folder containing the existing partitions, and `3` is the number of runs for each model/partitions of model):
@@ -108,4 +109,4 @@ To evaluate memory usage, we use *Valgrind’s Massif tool* to trace heap memory
 python3 scripts/benchmarks/create_cdf.py partitions/
 ```
 The output CDF plots for each model and its partitions will be saved in the `results/` directory.
-> **Note** The process can be time-consuming, as Valgrind’s Massif tool captures heap snapshots in real time throughout inference.
+> **Note** The process can be time-consuming, as Valgrind’s Massif tool captures heap snapshots in real time throughout inference. Once the automatic partitioning technique is completed, you can put `new_partitions` to the command and generate the associate cdf for the model partitions.

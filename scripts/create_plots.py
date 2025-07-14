@@ -29,7 +29,7 @@ def get_model_lists(size_models):
             ['Inception\nV3', 'ResNet101\nV2', 'ResNet152\nV2', 'EfficientNet\nV2']
         )
 
-def plot_whole_vs_partitions(df_total, size_models):
+def plot_whole_vs_partitions(df_total, size_models, text=False):
     models, labels = get_model_lists(size_models)
     fig, ax = plt.subplots(figsize=(15, 12))
     bar_width, spacing = 0.3, 0.1
@@ -45,33 +45,35 @@ def plot_whole_vs_partitions(df_total, size_models):
         base = df[df['Model'] == model]
         split = df[df['Model'] == model + '_split0']
         if not base.empty and not split.empty:
-            ax.bar(positions[i] - bar_width / 2, base['Total Client Time'].values[0], bar_width, color=colors[0], linewidth=2)
-            ax.bar(positions[i] + bar_width / 2, split['Total Client Time'].values[0], bar_width, color=colors[1], linewidth=2)
+            ax.bar(positions[i] - bar_width / 2, base['Total Client Time'].values[0], bar_width, color=colors[0], linewidth=2, edgecolor='black')
+            ax.bar(positions[i] + bar_width / 2, split['Total Client Time'].values[0], bar_width, color=colors[1], linewidth=2, edgecolor='black')
     
-            ax.text(positions[i] - bar_width / 2, base['Total Client Time'].values[0] + 10, str(round(base['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=26)
-            ax.text(positions[i] + bar_width / 2, split['Total Client Time'].values[0] + 10, str(round(split['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=26)
+            if text:
+                ax.text(positions[i] - bar_width / 2, base['Total Client Time'].values[0] + 10, str(round(base['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=26)
+                ax.text(positions[i] + bar_width / 2, split['Total Client Time'].values[0] + 10, str(round(split['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=26)
 
-    ax.set_ylabel('Inference Time (ms)', fontsize=36, labelpad=30)
+    if size_models == "small":
+        ax.set_ylabel('Inference Time (ms)', fontsize=43, labelpad=30)
+        plt.ylim(0, 3000)
+    else:
+        legend_handles = [
+            Patch(facecolor=colors[0], edgecolor='black', linewidth=2, label=f'InferONNX (full model)'),
+            Patch(facecolor=colors[1], edgecolor='black', linewidth=2, label=f'InferONNX (model partitioning)'),
+        ]
+        ax.legend(handles=legend_handles, fontsize=34.5, loc='upper left', ncol=1)
+
+
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontsize=30)
-    plt.tick_params(axis='y', labelsize=30)
-    plt.xticks()
+    ax.set_xticklabels(labels, fontsize=40)
+    plt.tick_params(axis='y', labelsize=40)
+    plt.xticks(rotation=45)
 
-    ax.spines['top'].set_linewidth(0)
-    ax.spines['right'].set_linewidth(0)
-    ax.spines['bottom'].set_linewidth(2)
-    ax.spines['left'].set_linewidth(2)
-
-    ax.legend(handles=[
-        Patch(facecolor=colors[0], edgecolor='black', linewidth=2, label=f'InferONNX-on Disk with SGX - Whole model'),
-        Patch(facecolor=colors[1], edgecolor='black', linewidth=2, label=f'InferONNX-on Disk with SGX - Partitions of model'),
-    ], fontsize=28, loc='upper center', bbox_to_anchor=(0.4, 1.17), ncol=1, frameon=False)
-
+    
     plt.tight_layout()
     plt.savefig(f"{inferONNX_path}/results/figure5_{size_models}_models.pdf", format='pdf')
     plt.show()
 
-def plot_sgx_disk_vs_sgx_memory_vs_cpu_paper(df_total, size_models):
+def plot_sgx_disk_vs_sgx_memory_vs_cpu(df_total, size_models, text=False):
     models, labels = get_model_lists(size_models)
     fig, ax = plt.subplots(figsize=(15, 12))
     bar_width, spacing = 0.3, 0.1
@@ -91,31 +93,32 @@ def plot_sgx_disk_vs_sgx_memory_vs_cpu_paper(df_total, size_models):
         base_memory = df_sgx_on_memory[df_sgx_on_memory['Model'] == model]
         base_without_sgx = df_cpu_ssl[df_cpu_ssl['Model'] == model]
         if not base.empty and not base_memory.empty and not base_without_sgx.empty:
-            ax.bar(positions[i] + 0 * bar_width, base['Total Client Time'].values[0], bar_width, color=colors[0])
-            ax.bar(positions[i] + 1 * bar_width, base_memory['Total Client Time'].values[0], bar_width, color=colors[1])
-            ax.bar(positions[i] + 2 * bar_width, base_without_sgx['Total Client Time'].values[0], bar_width, color=colors[2])
+            ax.bar(positions[i] + 0 * bar_width, base['Total Client Time'].values[0], bar_width, color=colors[0], edgecolor='black')
+            ax.bar(positions[i] + 1 * bar_width, base_memory['Total Client Time'].values[0], bar_width, color=colors[1], edgecolor='black')
+            ax.bar(positions[i] + 2 * bar_width, base_without_sgx['Total Client Time'].values[0], bar_width, color=colors[2], edgecolor='black')
             
-            ax.text(positions[i] + 0 * bar_width, base['Total Client Time'].values[0] + 10, str(round(base['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
-            ax.text(positions[i] + 1 * bar_width, base_memory['Total Client Time'].values[0] + 10, str(round(base_memory['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
-            ax.text(positions[i] + 2 * bar_width, base_without_sgx['Total Client Time'].values[0] + 10, str(round(base_without_sgx['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
-            
-    ax.set_ylabel('Inference Time (ms)', fontsize=36, labelpad=30)
+            if text:
+                ax.text(positions[i] + 0 * bar_width, base['Total Client Time'].values[0] + 10, str(round(base['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
+                ax.text(positions[i] + 1 * bar_width, base_memory['Total Client Time'].values[0] + 10, str(round(base_memory['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
+                ax.text(positions[i] + 2 * bar_width, base_without_sgx['Total Client Time'].values[0] + 10, str(round(base_without_sgx['Total Client Time'].values[0], 2)), ha='center', va='bottom', fontsize=24)
+    
+    if size_models == "small" or size_models == "xlarge":
+        ax.set_ylabel('Inference Time (ms)', fontsize=43, labelpad=30)
+    else:
+        legend_handles = [
+            Patch(facecolor=colors[0], edgecolor='black', linewidth=2, label=f'InferONNX'),
+            Patch(facecolor=colors[1], edgecolor='black', linewidth=2, label=f'InferONNX (in mem)'),
+            Patch(facecolor=colors[2], edgecolor='black', linewidth=2, label=f'InferONNX (in mem, w/o SGX)'),
+        ]
+        ax.legend(handles=legend_handles, fontsize=34.5, loc='upper left', ncol=1)
+        
     ax.set_xticks(positions + 2 * bar_width / 2)
-    ax.set_xticklabels(labels, fontsize=30)
-    if size_models == "small": plt.ylim(0, 3000)
-    ax.tick_params(axis='y', labelsize=30)
-    plt.xticks()
+    ax.set_xticklabels(labels, fontsize=30)    
+    if size_models == "small":
+        plt.ylim(0, 3000)
 
-    ax.spines['top'].set_linewidth(0)
-    ax.spines['right'].set_linewidth(0)
-    ax.spines['bottom'].set_linewidth(2)
-    ax.spines['left'].set_linewidth(2)
-
-    ax.legend(handles=[
-        Patch(facecolor=colors[0], edgecolor='black', linewidth=2, label=f'InferONNX-on Disk with SGX'),
-        Patch(facecolor=colors[1], edgecolor='black', linewidth=2, label=f'InferONNX-Memory only with SGX'),
-        Patch(facecolor=colors[2], edgecolor='black', linewidth=2, label=f'InferONNX-without SGX'),
-    ], fontsize=28, loc='upper center', bbox_to_anchor=(0.4, 1.2), ncol=2, frameon=False)    
+    ax.tick_params(axis='y', labelsize=40)
+    plt.xticks(rotation=45)
 
     plt.tight_layout()
     plt.savefig(f"{inferONNX_path}/results/figure4_{size_models}_models.pdf", format='pdf')
@@ -186,7 +189,7 @@ def plot_inference_time_breakdown(df_total):
 
     plt.tight_layout()
     plt.savefig('results/figure1.pdf', format='pdf')
-
+    
 def create_df():
     df_total = pd.DataFrame(columns=['Configuration', 'Model', 'Run Model Time', 'Inference Time', 'Total Client Time'])
     index_df = 0
@@ -227,8 +230,8 @@ def create_plots(df_total):
     plot_whole_vs_partitions(df_total, 'small')
     plot_whole_vs_partitions(df_total, 'large')
 
-    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper(df_total, 'small')
-    plot_sgx_disk_vs_sgx_memory_vs_cpu_paper(df_total, 'large')
+    plot_sgx_disk_vs_sgx_memory_vs_cpu(df_total, 'small')
+    plot_sgx_disk_vs_sgx_memory_vs_cpu(df_total, 'large')
 
     table_cpu_memory_vs_cpu_disk(df_total)
 
@@ -262,7 +265,8 @@ def main():
 
     num_partitions = []
     for model in models:
-        if "split" in model: continue
+        if "split" in model or not os.path.exists(f'{inferONNX_path}/models/{model[:-5]}/{partitions_folder}'):
+            continue
         result = subprocess.run(f'ls {inferONNX_path}/models/{model[:-5]}/{partitions_folder} | wc -w', shell=True, text=True, capture_output=True)
         num_partitions.append(int(result.stdout.strip()))
 

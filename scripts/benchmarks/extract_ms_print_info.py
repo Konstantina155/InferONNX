@@ -90,12 +90,12 @@ def main():
     file_paths = [path.replace('.txt', '_partitions.txt') for path in file_paths] if len(sys.argv) == 2 else file_paths
 
     os.chdir(f"{previous_path}/src/server_with_tls/scripts")
-    subprocess.run("make clean && make", check=True)
+    subprocess.run("make clean && make", shell=True)
 
     generate_ms_print_info(previous_path, paths, partitions_folder, prefix)
     analyze_memory_usage(file_paths, partitions_folder, prefix, previous_path)
 
-    subprocess.run(f"rm -rf {prefix}", check=True)
+    subprocess.run(f"rm -rf {prefix}", shell=True)
 
     os.chdir(previous_path)
 

@@ -7,15 +7,14 @@ import matplotlib.pyplot as plt
 import subprocess
 
 MODEL_NAMES = {
-    'squeezenet': 'SqueezeNet1.0',
-    'mobilenet': 'MobileNet V2',
-    'densenet': 'DenseNet121',
-    'efficientnet-lite4': 'EfficientNet Lite4',
-    'inception': 'Inception V3',
-    'yolov5': 'YOLO V5',
-    'resnet101': 'ResNet101 V2',
-    'resnet152': 'ResNet152 V2',
-    'efficientnet-v2': 'EfficientNet V2'
+    'squeezenet1.0-7': 'SqueezeNet1.0',
+    'mobilenetv2-7': 'MobileNet V2',
+    'densenet-7': 'DenseNet121',
+    'efficientnet-lite4-11': 'EfficientNet Lite4',
+    'inception-v3-12': 'Inception V3',
+    'resnet101-v2-7': 'ResNet101 V2',
+    'resnet152-v2-7': 'ResNet152 V2',
+    'efficientnet-v2-l-18': 'EfficientNet V2'
 }
 
 PARTITION_NAMES = {f'{k}_partitions': v for k, v in MODEL_NAMES.items()}

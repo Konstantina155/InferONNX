@@ -39,12 +39,12 @@ def measure_each_op_time(path_to_scripts, inferONNX_path):
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only_operators 1 {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only_operators entire 1 {inferONNX_path}")
 
-def clean_up(tag_files, inferONNX_path):
+def clean_up(tag_files, inferONNX_path, home_dir):
     for tag_file in tag_files:
         os.remove(tag_file)
 
     os.chdir(inferONNX_path)
-    run_command('rm -rf ../occlum_workspace ../certificates ../unencrypted_models ../encrypted_models')
+    run_command(f'rm -rf ../occlum_workspace ../certificates {home_dir}/unencrypted_models {home_dir}/encrypted_models')
     run_command(f'rm src/server_with_tls/inference_time_* src/server_without_tls/inference_time_*')
 
 def main():
@@ -55,11 +55,12 @@ def main():
     partitions_folder = sys.argv[1]
     number_of_runs = sys.argv[2]
 
+    home_dir = os.getenv("HOME")
     os.chdir("..")
     check_and_create_dir('occlum_workspace')
     check_and_create_dir('certificates')
-    check_and_create_dir('unencrypted_models')
-    check_and_create_dir('encrypted_models')
+    check_and_create_dir(f'{home_dir}/unencrypted_models')
+    check_and_create_dir(f'{home_dir}/encrypted_models')
     os.chdir("occlum_workspace")
 
     if not os.listdir('./'):
@@ -75,7 +76,7 @@ def main():
     run_all_and_create_plot(path_to_scripts, number_of_runs, partitions_folder, inferONNX_path)
     measure_each_op_time(path_to_scripts, inferONNX_path)
 
-    clean_up([tag_no_tls_server, tag_tls_server], inferONNX_path)
+    clean_up([tag_no_tls_server, tag_tls_server], inferONNX_path, home_dir)
 
 if __name__ == "__main__":
     main()
