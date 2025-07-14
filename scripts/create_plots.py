@@ -75,15 +75,23 @@ def plot_whole_vs_partitions(df_total, size_models, text=False):
 
 def plot_sgx_disk_vs_sgx_memory_vs_cpu(df_total, size_models, text=False):
     models, labels = get_model_lists(size_models)
-    fig, ax = plt.subplots(figsize=(15, 12))
+    fig, ax = plt.subplots(figsize=(15, 12)) #15, 10 for presentation
     bar_width, spacing = 0.3, 0.1
     positions = np.arange(len(models)) * (bar_width * 3 + spacing)
     
+    # Colors for presentation
     colors = [
         '#B455FF',
-        '#A237FF',
-        '#9019FF'
+        "#6C1FA7",
+        "#3E0F5C"
     ]
+
+    # Colors in the paper
+    # colors = [
+    #    '#B455FF',
+    #    '#A237FF',
+    #    '#9019FF'
+    #]
     
     df_sgx_disk = df_total[df_total['Configuration'] == 'SGX-on Disk']
     df_sgx_on_memory = df_total[df_total['Configuration'] == 'SGX-on Memory']
@@ -113,12 +121,12 @@ def plot_sgx_disk_vs_sgx_memory_vs_cpu(df_total, size_models, text=False):
         ax.legend(handles=legend_handles, fontsize=34.5, loc='upper left', ncol=1)
         
     ax.set_xticks(positions + 2 * bar_width / 2)
-    ax.set_xticklabels(labels, fontsize=30)    
+    ax.set_xticklabels(labels, fontsize=30) # 35 for presentation
     if size_models == "small":
         plt.ylim(0, 3000)
 
     ax.tick_params(axis='y', labelsize=40)
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=45) #() for presentation
 
     plt.tight_layout()
     plt.savefig(f"{inferONNX_path}/results/figure4_{size_models}_models.pdf", format='pdf')
