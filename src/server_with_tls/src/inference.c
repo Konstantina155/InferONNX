@@ -48,7 +48,6 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, MyInfe
 
     
     if (inference_model) {
-        fprintf(stderr, "here");
         check(tract_inference_model_input_count(inference_model, &num_inputs));
         input_names = malloc((num_inputs + 1) * sizeof(char *));
         for (int i = 0; i < (int)num_inputs; i++) {
@@ -637,7 +636,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
         return error;
     }
 
-    if (!images && tokenizer_size > 0){
+    if (!images && tokenizer_size > 0) {
         int model_count = get_array_size((void **)m->names);
         fprintf(stderr, "Model count: %d\n", model_count);
         char *model_name = NULL;

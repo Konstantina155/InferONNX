@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
+#define NUMBER_INPUTS_LLM 3
+
 #define check(call) {                                                           \
     TRACT_RESULT result = call;                                                 \
     if(result == TRACT_RESULT_KO) {                                             \
@@ -33,9 +35,15 @@ get_array_size(void **array)
     return size;
 }
 
+typedef struct input_info {
+    void **input_values;
+    void **input_shapes;
+}input_info;
+
 typedef struct operator_node {
-    void (*run_inference)(struct operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
-    TractValue **outputs;
+    void (*run_inference)(struct operator_node **node, int node_id, input_info *input_info_ptr, void *inference_model_ptr, void *tokenizer_ptr);
+    void **outputs;
+    void **shapes;
     int num_inputs;
     int num_outputs;
     char *model_name;
@@ -45,6 +53,8 @@ typedef struct operator_node {
     struct operator_node **children;
     int *parent_output_indices;
     double elapsedTime;
+    bool is_visited;
+    int node_id;
 }operator_node;
 
 typedef struct {
@@ -55,36 +65,69 @@ typedef struct {
     char **output_names;
 }operator_io;
 
+typedef struct {
+    void **input_values;
+    int number_inputs;
+    char **input_names;
+}inputs;
+
+typedef enum {
+    MODEL_TYPE_CNN,
+    MODEL_TYPE_LLM
+} ModelType;
+
 void
-free_inference_model(TractInferenceModel *inference_model)
+free_inference_model(void *inference_model_ptr, ModelType type)
 {
-    assert(inference_model);
-    if (tract_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
-        fprintf(stderr, "Error releasing inference model\n");
-        return;
+    assert(inference_model_ptr);
+    switch (type) {
+        case MODEL_TYPE_CNN: {
+            TractInferenceModel *inference_model = (TractInferenceModel *)inference_model_ptr;
+            if (tract_cnn_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error releasing inference model\n");
+                return;
+            }
+            assert(!inference_model);
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr;
+            if (tract_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error releasing inference model\n");
+                return;
+            }
+            assert(!inference_model);
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type for cleanup\n");
+            break;
     }
-    assert(!inference_model);
 }
 
 void
-free_inference_models(TractInferenceModel **inference_models, int length)
+free_inference_models(void **inference_models_ptr, int length, ModelType type)
 {
-    assert(inference_models);
+    assert(inference_models_ptr);
     for (int i = 0; i < (length + 1); ++i) {
-        if (inference_models[i]) {
-            free_inference_model(inference_models[i]);
+        if (inference_models_ptr[i]) {
+            free_inference_model(inference_models_ptr[i], type);
         }
     }
-    free(inference_models);
+    free(inference_models_ptr);
 }
 
 void
-run_inference(operator_node **node, TractValue **input_values, TractInferenceModel *inference_model)
+run_inference_cnn(operator_node **node, int node_id, input_info *input_info_ptr, void *inference_model_ptr, void *tokenizer_ptr)
 {
+    assert(!tokenizer_ptr);
+
     struct timeval t1, t2;
     double elapsed_time;
-
     TractModel *model = NULL;
+    TractInferenceModel *inference_model = (TractInferenceModel *)inference_model_ptr; 
+    TractValue **input_values = (TractValue **)input_info_ptr->input_values;
+    
 #ifndef USE_MEMORY_ONLY
     // Initialize onnx parser
     TractOnnx *onnx = NULL;
@@ -92,7 +135,7 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
     assert(onnx);
 
     // Load the model
-    check(tract_onnx_model_for_path(onnx, (*node)->model_name, &inference_model));
+    check(tract_onnx_model_for_path_cnn(onnx, (*node)->model_name, &inference_model));
     assert(inference_model);
     assert(onnx);
 
@@ -103,7 +146,7 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
     check(tract_inference_model_into_typed(&inference_model,&model));
     assert(model);
 
-    free_inference_model(inference_model);
+    free_inference_model(inference_model, MODEL_TYPE_CNN);
 #else
     // Transform an inference model into a typed model
     check(tract_inference_model_into_typed(&inference_model,&model));
@@ -131,9 +174,9 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
         if (!(*node)->parents) break;
         if (strcmp((*node)->parents[i]->model_name, "input") == 0) {
             index++;
-            int num_inputs = get_array_size((void **)input_values);
+            int num_inputs = get_array_size(input_info_ptr->input_values);
             for (int j = 0; j < num_inputs; j++) {
-                inputs[k++] = input_values[j];
+                inputs[k++] = (TractValue *)input_values[j];
             }
             continue;
         }
@@ -142,20 +185,21 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
             fprintf(stderr, "The output is NULL!");
             continue;
         }
-        inputs[k++] = (*node)->parents[i]->outputs[indices[index++]];
+        inputs[k++] = (TractValue *)(*node)->parents[i]->outputs[indices[index++]];
     }
     if ((*node)->num_inputs == -1 || (*node)->num_parents == 0) {
-        int num_inputs = get_array_size((void **)input_values);
+        int num_inputs = get_array_size(input_info_ptr->input_values);
         inputs = realloc(inputs, (num_inputs + 1) * sizeof(TractValue *));
         assert(inputs);
         for (int j = 0; j < num_inputs; j++) {
-            inputs[k++] = input_values[j];
+            inputs[k++] = (TractValue *)input_values[j];
         }
     }
     inputs[k] = NULL;
     check(tract_runnable_run(runnable, inputs, outputs));
     free(inputs);
     
+    fprintf(stderr, "Num outputs: %d", num_outputs);
     for (int i = 0; i < num_outputs; i++) {
         if (outputs[i] == NULL) {
             fprintf(stderr, "Output %d is NULL\n", i);
@@ -186,7 +230,138 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
     check(tract_runnable_release(&runnable));
     assert(!runnable);
 
-    (*node)->outputs = (TractValue **)malloc((num_outputs + 1) * sizeof(TractValue *));
+    (*node)->outputs = (void **)malloc((num_outputs + 1) * sizeof(void *));
+    for (int i = 0; i < num_outputs; i++) {
+        if (outputs[i] == NULL) {
+            fprintf(stderr, "Output %d is NULL\n", i);
+            continue;
+        }
+        (*node)->outputs[i] = (void *)outputs[i];
+    }
+    (*node)->outputs[num_outputs] = NULL;
+    free(outputs);
+    (*node)->elapsedTime = elapsed_time;
+}
+
+void
+run_inference_llm(operator_node **node, int node_id, input_info *input_info_ptr, void *inference_model_ptr, void *tokenizer_ptr)
+{
+    assert(tokenizer_ptr);
+
+    if (strstr((*node)->model_name, "model.onnx_data")) {
+        (*node)->outputs = (void **)malloc((2) * sizeof(void *));
+        return;
+    }
+
+    struct timeval t1, t2;
+    double elapsed_time;
+    TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr; 
+    TractLlmTransformedModel *transformed_model = NULL;
+    int num_inputs_ptr = get_array_size(input_info_ptr->input_values);
+    fprintf(stderr, "Num inputs ptr: %d\n", num_inputs_ptr);
+
+#ifndef USE_MEMORY_ONLY
+    // Load the model
+    inference_model = NULL;
+    fprintf(stderr, "Node name: %s\n", (*node)->model_name);
+    check(tract_onnx_model_for_path_llm((*node)->model_name, &inference_model));
+    assert(inference_model);
+
+    fprintf(stderr, "Here\n");
+#endif
+
+    char *inference = NULL;
+    int num_outputs = (*node)->num_outputs;
+    void **outputs = malloc((num_outputs + 1) * sizeof(void *));
+    void **shapes = malloc((num_outputs + 1) * sizeof(void *));
+
+    gettimeofday(&t1, NULL);
+
+    int k = 0, index = 0;
+    void **inputs = malloc(((*node)->num_inputs + 1) * sizeof(void *));
+    void **input_shapes = malloc(((*node)->num_inputs + 1) * sizeof(void *));
+
+    int *indices = (*node)->parent_output_indices;
+    fprintf(stderr, "Number of inputs: %d\n", (*node)->num_inputs);
+    for (int i = 0; i < (*node)->num_inputs; i++) {
+        if (!(*node)->parents || k >= (*node)->num_inputs) break;
+        fprintf(stderr, "Parent name: %s\n", (*node)->parents[i]->model_name);
+        if (strcmp((*node)->parents[i]->model_name, "input") == 0) {
+            fprintf(stderr, "Previous node id: %d ", node_id);
+            if (node_id == 2) {
+                node_id = 0;
+            } else if (node_id == 4) {
+                node_id = 1; // 2 for cerebras-gpt
+            } else if (node_id == 3) {
+                node_id = 2; // 2 for gpt_neo
+            } else {
+                node_id = 1;
+            }
+
+            index++;
+            
+            fprintf(stderr, "Current k: %d: input_values[%d]\n", k, node_id);
+            inputs[k] = input_info_ptr->input_values[node_id];
+            //input_shapes[k] = NULL;
+            input_shapes[k] = input_info_ptr->input_shapes[node_id];
+            k++;
+            if (node_id == 1) {
+                node_id = 3;
+            } else {
+                node_id = 1;
+            }
+            continue;
+        }
+        
+        if (!(*node)->parents[i]->outputs[indices[index]]) {
+            fprintf(stderr, "The output is NULL!");
+            continue;
+        }
+        fprintf(stderr, "Current k: %d: parent[%d]->outputs[%d]\n", k, i, indices[index]);
+        inputs[k] = (*node)->parents[i]->outputs[indices[index]];
+        //input_shapes[k] = NULL;
+        input_shapes[k] = (*node)->parents[i]->shapes[indices[index]];
+        index++;
+        k++;
+    }
+    if ((*node)->num_inputs == -1 || (*node)->num_parents == 0) {
+        inputs = realloc(inputs, (num_inputs_ptr + 1) * sizeof(void *));
+        assert(inputs);
+        for (int j = 0; j < num_inputs_ptr; j++) {
+            inputs[k] = input_info_ptr->input_values[j];
+            //input_shapes[k] = NULL;
+            input_shapes[k] = input_info_ptr->input_shapes[j];
+            k++;
+        }
+    }
+    inputs[k] = NULL;
+    input_shapes[k] = NULL;
+    fprintf(stderr, "final k: %d\n", k);
+
+#ifndef USE_MEMORY_ONLY
+    //check(tract_inference_model_into_optimized_llm(inputs, k, input_shapes, &inference_model, &transformed_model));
+    check(tract_inference_model_into_typed_llm(inputs, k, input_shapes, &inference_model, &transformed_model));
+    assert(transformed_model);
+
+    fprintf(stderr, "Here\n");
+    free_inference_model(inference_model, MODEL_TYPE_LLM);
+#else
+    check(tract_inference_model_into_typed_llm(inputs, k, input_shapes, &inference_model, &transformed_model));
+    assert(transformed_model);
+#endif
+
+    fprintf(stderr, "final k: %d\n", k);
+    check(tract_model_into_runnable_and_run_llm(tokenizer_ptr, inputs, k, &transformed_model, &inference, outputs, shapes));
+    fprintf(stderr, "%s\n", inference);
+    tract_free_cstring(inference);
+    free(inputs);
+    free(input_shapes);
+
+    gettimeofday(&t2, NULL);
+    elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+    elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+
+    (*node)->outputs = (void **)malloc((num_outputs + 1) * sizeof(void *));
     for (int i = 0; i < num_outputs; i++) {
         if (outputs[i] == NULL) {
             fprintf(stderr, "Output %d is NULL\n", i);
@@ -195,7 +370,17 @@ run_inference(operator_node **node, TractValue **input_values, TractInferenceMod
         (*node)->outputs[i] = outputs[i];
     }
     (*node)->outputs[num_outputs] = NULL;
+    (*node)->shapes = (void **)malloc((num_outputs + 1) * sizeof(void *));
+    for (int i = 0; i < num_outputs; i++) {
+        if (shapes[i] == NULL) {
+            fprintf(stderr, "Output shape %d is NULL\n", i);
+            continue;
+        }
+        (*node)->shapes[i] = shapes[i];
+    }
+    (*node)->shapes[num_outputs] = NULL;
     free(outputs);
+    free(shapes);
     (*node)->elapsedTime = elapsed_time;
 }
 
@@ -242,11 +427,12 @@ decode_pb(FILE *fd)
 }
 
 operator_node *
-create_operator_node(char *model_name)
+create_operator_node(char *model_name, int node_id, ModelType model_type)
 {
     operator_node *node = (operator_node *)malloc(sizeof(operator_node));
     node->model_name = model_name;
     node->outputs = NULL;
+    node->shapes = NULL;
     node->num_inputs = -1;
     node->num_outputs = -1;
     node->num_children = 0;
@@ -254,7 +440,21 @@ create_operator_node(char *model_name)
     node->children = NULL;
     node->parents = NULL;
     node->parent_output_indices = NULL;
-    node->run_inference = run_inference;
+    switch (model_type) {
+        case MODEL_TYPE_CNN: {
+            node->run_inference = run_inference_cnn;
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            node->run_inference = run_inference_llm;
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type.\n");
+            return NULL;
+    }
+    node->is_visited = false;
+    node->node_id = node_id;
     return node;
 }
 
@@ -308,44 +508,27 @@ search_operator_node_by_name(operator_node *node, const char *target_name) {
     return NULL;
 }
 
-bool 
-is_node_visited(operator_node *node, char **visited_nodes, int visited_count)
-{
-    assert(visited_nodes);
-    assert(visited_count > -1);
-    assert(node);
-    if(!node->model_name) {
-        return true;
-    }
-
-    for (int i = 0; i < visited_count; i++) {
-        if (strcmp(visited_nodes[i], node->model_name) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void
-print_operator_node(operator_node *node, char **visited_nodes, int *visited_count)
+print_operator_node(operator_node *node)
 {
     if (!node) {
         return;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count) == false) {
-        visited_nodes[*visited_count] = node->model_name;
-        (*visited_count)++;
-
-        fprintf(stderr, "\nModel name: %s\n", node->model_name);
-        fprintf(stderr, "Number of inputs: %d\n", node->num_inputs);
-        fprintf(stderr, "Number of outputs: %d\n", node->num_outputs);
-        fprintf(stderr, "Number of children: %d\n", node->num_children);
-        fprintf(stderr, "Number of parents: %d\n\n", node->num_parents);
+    if (node->is_visited == true) {
+        return;
     }
 
+    node->is_visited = true;
+
+    fprintf(stderr, "\nModel name: %s\n", node->model_name);
+    fprintf(stderr, "Number of inputs: %d\n", node->num_inputs);
+    fprintf(stderr, "Number of outputs: %d\n", node->num_outputs);
+    fprintf(stderr, "Number of children: %d\n", node->num_children);
+    fprintf(stderr, "Number of parents: %d\n\n", node->num_parents);
+
     for (int i = 0; i < node->num_children; i++) {
-        print_operator_node(node->children[i], visited_nodes, visited_count);
+        print_operator_node(node->children[i]);
     }
 }
 
@@ -381,7 +564,7 @@ update_node(operator_io **io, int id, operator_node *head)
                 len = strlen(output_name);
 
                 if (strncmp(current_input_names[i], output_name, len) == 0) {
-
+                    fprintf(stderr, "name equal: %s\n", io[current_index]->model_name);
                     parent = search_operator_node_by_name(head, io[current_index]->model_name);
                     insert_parent_to_operator_node(parent, child);
                     parent_output_indices[index++] = j;
@@ -402,94 +585,136 @@ update_node(operator_io **io, int id, operator_node *head)
     free(parent_output_indices);
 }
 
-double
-execute_tree(operator_node *node, TractValue **input_values, double elapsed_time, char **visited_nodes, int *visited_count, TractInferenceModel **inference_models)
-{
+operator_node *
+execute_tree(operator_node *node, input_info *input_info_ptr, double *elapsed_time, void **inference_models, void *tokenizer_ptr)
+{   
     if (!node) {
-        return elapsed_time;
+        return NULL;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count) == false) {
-        visited_nodes[*visited_count] = node->model_name;
-        (*visited_count)++;
-        fprintf(stderr, "\n\nModel name: %s\n", node->model_name);
-        if (*visited_count != 1) {
+    if (node->is_visited == true) {
+        return node;
+    }
+
+    node->is_visited = true;
+    operator_node *last_processed_node = node;
+
+    fprintf(stderr, "\n\nModel name: %s\n", node->model_name);
+    fprintf(stderr, "Node id: %d\n", node->node_id);
+
+    if (node->node_id != 1) {
 #ifndef USE_MEMORY_ONLY
-            node->run_inference(&node, input_values, NULL);
+        node->run_inference(&node, node->node_id, input_info_ptr, NULL, tokenizer_ptr);
 #else
-            node->run_inference(&node, input_values, inference_models[*visited_count - 1]);
+        node->run_inference(&node, node->node_id, input_info_ptr, inference_models[node->node_id - 1], tokenizer_ptr);
 #endif
-            elapsed_time += node->elapsedTime;
-        }
+        *elapsed_time += node->elapsedTime;
+        fprintf(stderr, "Node elapsed_time: %f\n", node->elapsedTime);
     }
 
     for (int i = 0; i < node->num_children; i++) {
-        elapsed_time = execute_tree(node->children[i], input_values, elapsed_time, visited_nodes, visited_count, inference_models);
+        operator_node *child_node = execute_tree(node->children[i], input_info_ptr, elapsed_time, inference_models, tokenizer_ptr);
+        if (child_node) last_processed_node = child_node;
     }
-    return elapsed_time;
+
+    return last_processed_node;
 }
 
 void
-free_operator_node_output(operator_node *node, char **visited_nodes, int *visited_count)
+free_operator_node_output(operator_node *node, ModelType type)
 {
     if (!node) {
         return;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count)) {
+    if (node->is_visited == true) {
         return;
     }
 
-    visited_nodes[*visited_count] = node->model_name;
-    (*visited_count)++;
+    node->is_visited = true;
 
     for (int i = 0; i < node->num_children; i++) {
-        free_operator_node_output(node->children[i], visited_nodes, visited_count);
+        free_operator_node_output(node->children[i], type);
     }
 
     if (strcmp(node->model_name, "input") == 0) return;
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
-            if (tract_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
-                fprintf(stderr, "Error destroying tract value\n");
-                return;
+            switch (type) {
+                case MODEL_TYPE_CNN: {
+                    TractValue *value = (TractValue *)node->outputs[i];
+                    if (tract_cnn_value_destroy(&value) != TRACT_RESULT_OK) {
+                        fprintf(stderr, "Error destroying tract value for cnn\n");
+                        return;
+                    }
+                    break;
+                }
+                case MODEL_TYPE_LLM: {
+                    if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                        fprintf(stderr, "Error destroying tract value for llm\n");
+                        return;
+                    }
+                    break;
+                }
+                default:
+                    fprintf(stderr, "Error: Unknown model type for cleanup\n");
+                    break;
             }
         }
         free(node->outputs);
+        free(node->shapes);
+        node->outputs = NULL;
+        node->shapes = NULL;
     }
 
 }
 
 void
-free_operator_node(operator_node *node, char **visited_nodes, int *visited_count)
+free_operator_node(operator_node *node, ModelType type)
 {
     if (!node) {
         return;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count)) {
+    if (node->is_visited == true) {
         return;
     }
+
+    node->is_visited = true;
 
     if (node->parent_output_indices) {
         free(node->parent_output_indices);
     }
 
-    visited_nodes[*visited_count] = node->model_name;
-    (*visited_count)++;
-
     for (int i = 0; i < node->num_children; i++) {
-        free_operator_node(node->children[i], visited_nodes, visited_count);
+        free_operator_node(node->children[i], type);
     }
 
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
-            if (tract_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
-                fprintf(stderr, "Error destroying tract value\n");
-                return;
+            switch (type) {
+                case MODEL_TYPE_CNN: {
+                    TractValue *value = (TractValue *)node->outputs[i];
+                    if (tract_cnn_value_destroy(&value) != TRACT_RESULT_OK) {
+                        fprintf(stderr, "Error destroying tract value for cnn\n");
+                        return;
+                    }
+                    break;
+                }
+                case MODEL_TYPE_LLM: {
+                    if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                        fprintf(stderr, "Error destroying tract value for llm\n");
+                        return;
+                    }
+                    break;
+                }
+                default:
+                    fprintf(stderr, "Error: Unknown model type for cleanup\n");
+                    break;
             }
         }
         free(node->outputs);
+        free(node->shapes);
     }
 
     if (node->children) {
@@ -503,6 +728,20 @@ free_operator_node(operator_node *node, char **visited_nodes, int *visited_count
     }
 
     free(node);
+}
+
+void
+reset_node_visibility(operator_node *node)
+{
+    if (!node) {
+        return;
+    }
+
+    node->is_visited = false;
+
+    for (int i = 0; i < node->num_children; i++) {
+        reset_node_visibility(node->children[i]);
+    }
 }
 
 operator_io **
@@ -590,6 +829,11 @@ free_operator_io(operator_io **io)
     assert(io);
 
     for (int i = 0; io[i] != NULL; i++) {
+        if (!io[i]->model_name) {
+            free(io[i]);
+            continue;
+        }
+        fprintf(stderr, "Freeing operator io: %s", io[i]->model_name);
         free(io[i]->model_name);
         for (int j = 0; j < io[i]->input_names_length; j++) {
             free(io[i]->input_names[j]);
@@ -610,54 +854,85 @@ print_operator_io(operator_io **io)
     assert(io);
 
     for (int i = 0; io[i] != NULL; i++) {
+        if (!io[i]->model_name) continue;
         fprintf(stderr, "Model input %d\n", i);
+        fprintf(stderr, "Model name: %s\n", io[i]->model_name);
         if (io[i]->input_names) {
-            fprintf(stderr, "Model name: %s\n", io[i]->model_name);
             fprintf(stderr, "Input names length: %d\n", io[i]->input_names_length);
             fprintf(stderr, "Input names:\n");
             for (int j = 0; io[i]->input_names[j] != NULL; j++) {
                 fprintf(stderr, "    %s\n", io[i]->input_names[j]);
             }
+        } else {
+            fprintf(stderr, "Model name:\nInput names length: 0\nInput names: (null)\n");
+        }
+        if (io[i]->output_names) {
             fprintf(stderr, "Output names length: %d\n", io[i]->output_names_length);
             fprintf(stderr, "Output names:\n");
             for (int j = 0; io[i]->output_names[j] != NULL; j++) {
                 fprintf(stderr, "    %s\n", io[i]->output_names[j]);
             }
-            fprintf(stderr, "\n");
+        } else {
+            fprintf(stderr, "Ouput names length: 0\nOutput names: (null)\n");
         }
+        fprintf(stderr, "\n");
     }
 }
 
-TractInferenceModel *
-onnx_model_for_path(char *model_name, TractInferenceModel *inference_model)
+void *
+onnx_model_for_path(char *model_name, void **inference_model, ModelType type)
 {
-    // Initialize onnx parser
-    TractOnnx *onnx = NULL;
-    check(tract_onnx_create(&onnx));
-    assert(onnx);
+    switch (type) {
+        case MODEL_TYPE_CNN: {
+            // Initialize onnx parser
+            TractOnnx *onnx = NULL;
+            check(tract_onnx_create(&onnx));
+            assert(onnx);
 
-    // Load the model
-    if (tract_onnx_model_for_path(onnx, model_name, &inference_model) != TRACT_RESULT_OK) {
-        fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
-        check(tract_onnx_destroy(&onnx));
-        check(tract_inference_model_destroy(&inference_model));
-        assert(!inference_model);
-        assert(!onnx);
-        return NULL;
-    }
-    assert(inference_model);
-    assert(onnx);
+            // Load the model
+            TractInferenceModel *cnn_inference_model = NULL;
+            if (tract_onnx_model_for_path_cnn(onnx, model_name, &cnn_inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
+                check(tract_onnx_destroy(&onnx));
+                check(tract_cnn_inference_model_release(&cnn_inference_model));
+                assert(!cnn_inference_model);
+                assert(!onnx);
+                return NULL;
+            }
+            assert(cnn_inference_model);
+            *inference_model = (void*)cnn_inference_model;
+            assert(onnx);
 
-    check(tract_onnx_destroy(&onnx));
-    assert(!onnx);
+            check(tract_onnx_destroy(&onnx));
+            assert(!onnx);
+    
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            // Load the model
+            TractLlmInferenceModel *llm_inference_model = NULL;
+            if (tract_onnx_model_for_path_llm(model_name, &llm_inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
+                check(tract_llm_inference_model_release(&llm_inference_model));
+                assert(!llm_inference_model);
+                return NULL;
+            }
+            assert(llm_inference_model);
+            *inference_model = (void*)llm_inference_model;
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type.\n");
+            return NULL;
+    }  
 
-    return inference_model;
+    return *inference_model;
 }
 
-TractInferenceModel **
+void **
 initialize_inference_models(int num_models)
 {
-    TractInferenceModel **inference_models = (TractInferenceModel **)malloc((num_models + 1) * sizeof(TractInferenceModel *));
+    void **inference_models = (void **)malloc((num_models + 1) * sizeof(void *));
     if (!inference_models) {
         fprintf(stderr, "Error allocating memory for inference_models\n");
         return NULL;
@@ -671,42 +946,101 @@ initialize_inference_models(int num_models)
 }
 
 void
-onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, int index, operator_node *head, char *model_name)
+onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_type, int index, operator_node *head, char *model_name)
 {
     uintptr_t num_inputs = 0;
-    char *input_name = NULL;
-    check(tract_inference_model_input_count(inference_model, &num_inputs));
-    
-    char **input_names = malloc((num_inputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_inputs; i++) {
-        check(tract_inference_model_input_name(inference_model, i, &input_name));
-        input_names[i] = input_name;
-    }
-    input_names[num_inputs] = NULL;
-
     uintptr_t num_outputs = 0;
+    char *input_name = NULL;
+    char **input_names = NULL;
+    char **output_names = NULL;
     int8_t *output_name = NULL;
-    check(tract_inference_model_output_count(inference_model, &num_outputs));
 
-    char **output_names = malloc((num_outputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_outputs; i++) {
-        check(tract_inference_model_output_name(inference_model, i, &output_name));
-        output_names[i] = (char *)output_name;
+    if (!inference_model_ptr) return;
+
+    switch (model_type) {
+        case MODEL_TYPE_CNN: {
+            TractInferenceModel *cnn_inference_model = (TractInferenceModel *)inference_model_ptr;
+            check(tract_inference_model_input_count(cnn_inference_model, &num_inputs));
+            input_names = malloc((num_inputs + 1) * sizeof(char *));
+            if (!input_names) return;
+            for (int i = 0; i < (int)num_inputs; i++) {
+                check(tract_inference_model_input_name(cnn_inference_model, i, &input_name));
+                input_names[i] = input_name;
+            }
+            input_names[num_inputs] = NULL;
+
+            check(tract_inference_model_output_count(cnn_inference_model, &num_outputs));
+            output_names = malloc((num_outputs + 1) * sizeof(char *));
+            if (!output_names) return;
+            for (int i = 0; i < (int)num_outputs; i++) {
+                check(tract_inference_model_output_name(cnn_inference_model, i, &output_name));
+                output_names[i] = (char *)output_name;
+            }
+            output_names[num_outputs] = NULL;
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            if (!inference_model_ptr) break; 
+            TractLlmInferenceModel *llm_inference_model = (TractLlmInferenceModel *)inference_model_ptr;
+            check(tract_llm_inference_model_input_count(llm_inference_model, &num_inputs));
+            input_names = malloc((num_inputs + 1) * sizeof(char *));
+            if (!input_names) return;
+            for (int i = 0; i < (int)num_inputs; i++) {
+                check(tract_llm_inference_model_input_name(llm_inference_model, i, &input_name));
+                input_names[i] = input_name;
+            }
+            input_names[num_inputs] = NULL;
+            
+
+            check(tract_llm_inference_model_output_count(llm_inference_model, &num_outputs));
+            output_names = malloc((num_outputs + 1) * sizeof(char *));
+            if (!output_names) return;
+            for (int i = 0; i < (int)num_outputs; i++) {
+                check(tract_llm_inference_model_output_name(llm_inference_model, i, &output_name));
+                output_names[i] = (char *)output_name;
+            }
+            output_names[num_outputs] = NULL;
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type.\n");
+            return;
     }
-    output_names[num_outputs] = NULL;
 
     if (index == 1) {
+        char **new_input_names = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(char *));
+        if (!new_input_names) return;
+        new_input_names[0] = strdup("input_ids");
+        if (NUMBER_INPUTS_LLM == 3) {
+            if (strstr(model_name, "albert") != 0) {
+                new_input_names[2] = strdup("token_type_ids");
+            } else {
+                new_input_names[2] = strdup("position_ids");
+            }
+            new_input_names[1] = strdup("attention_mask");
+            fprintf(stderr, "Model name: %s, name: %s", model_name, new_input_names[2]);
+        } else if (NUMBER_INPUTS_LLM == 2) {
+            new_input_names[1] = strdup("attention_mask");
+        }
+        new_input_names[NUMBER_INPUTS_LLM] = NULL;
+
         operator_io o_io_first;
         o_io_first.input_names_length = 0;
         o_io_first.input_names = NULL;
-        o_io_first.output_names_length = 1;
-        o_io_first.output_names = input_names;
+        o_io_first.output_names_length = NUMBER_INPUTS_LLM;
+        // o_io_first.output_names_length = 1; do not remember the reason why it is 1
+        o_io_first.output_names = new_input_names;
         insert_into_operator_io(&io, &o_io_first, index - 1, "input");
         update_node(io, index - 1, NULL);
+
+        free(new_input_names[0]);
+        free(new_input_names[1]);
+        free(new_input_names[2]);
+        free(new_input_names);
     }
 
-    operator_node *head2 = NULL;
     operator_io o_io;
+    operator_node *head2 = NULL;
     o_io.input_names_length = num_inputs;
     if (num_inputs == 0) {
         head2 = head;
@@ -736,25 +1070,49 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, int in
     }
     free(output_names);
 
+    print_operator_io(io);
     update_node(io, index, head);
 }
 
-TractInferenceModel **
+void **
 load_model_to_memory(char **names, int model_count, operator_node **result_head)
 {
-    TractInferenceModel **inference_models = initialize_inference_models(model_count + 1);
+    void **inference_models = initialize_inference_models(model_count + 1);
 
-    int initial_length = 10;
+    int initial_length = 10, index = 0;
     operator_io **io = init_operator_io(initial_length);
     assert(io);
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
+    int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
+                 (strstr(names[0], "albert") != NULL) || 
+                 (strstr(names[0], "gpt") != NULL) || 
+                 (strstr(names[0], "llama") != NULL) || 
+                 (strstr(names[0], "mistral") != NULL) ||
+                 (strstr(names[0], "deepseek") != NULL)
+                 ? 1 : 0;
+
+    ModelType type = is_llm ? MODEL_TYPE_LLM : MODEL_TYPE_CNN;
     char *model_path = NULL;
     for (int i = 1; i < model_count + 1; i++) {
-        model_path = names[i-1];
-        inference_models[i] = onnx_model_for_path(model_path, inference_models[i]);
-        if (!inference_models[i]) {
-            return NULL;
+        if (is_llm) {
+            model_path = names[i-1];
+            if (strstr(names[i-1], "model.onnx_data") != NULL) {
+                inference_models[i] = NULL;
+            } else {
+                index += 1;
+                fprintf(stderr, "Index: %d, model_path: %s\n", index, model_path);
+                inference_models[index] = onnx_model_for_path(model_path, &inference_models[index], type);
+                if (!inference_models[index]) {
+                    return NULL;
+                }
+            }
+        } else {
+            model_path = names[i-1];
+            inference_models[i] = onnx_model_for_path(model_path, &inference_models[i], type);
+            if (!inference_models[i]) {
+                return NULL;
+            }
         }
 
         if (i == initial_length) {
@@ -763,18 +1121,19 @@ load_model_to_memory(char **names, int model_count, operator_node **result_head)
             initial_length += 5;
         }
 	
-        curr_node = create_operator_node(model_path);
+        curr_node = create_operator_node(model_path, i+1, type);
         if (previous) {
             insert_child_to_operator_node(previous, curr_node);
         } else {
-            head = create_operator_node("input");
+            head = create_operator_node("input", i, type);
             insert_child_to_operator_node(head, curr_node);
         }
         previous = curr_node;
 
-        onnx_model_inputs(io, inference_models[i], i, head, model_path);
+        onnx_model_inputs(io, inference_models[i], type, i, head, model_path);
     }
 
+    fprintf(stderr, "Freeing operator io!");
     free_operator_io(io);
 
     (*result_head) = head;
@@ -947,7 +1306,15 @@ main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    input_info *input_info_ptr = malloc(sizeof(input_info));
+    input_info_ptr->input_values = NULL;
+    input_info_ptr->input_shapes = NULL;
+    char *model_name = filenames[0];
+    ModelType type = MODEL_TYPE_CNN;
+    void *tokenizer_ptr = NULL;
+
     if (strstr(argv[2], "tokenizer.json") != NULL) {
+        type = MODEL_TYPE_LLM;
         FILE *fd = fopen(argv[2], "rb");
         fprintf(stderr, "Input: %s\n", argv[2]);
         if (!fd) {
@@ -955,7 +1322,6 @@ main(int argc, char **argv)
             return 1;
         }
 
-        char *model_name;
         for (int i = 0; i < num_models; ++i) {
             if (strstr(filenames[i], "model.onnx_data") == NULL) {
                 model_name = filenames[i];
@@ -976,122 +1342,150 @@ main(int argc, char **argv)
         }
         fclose(fd);
 
-        // TractValue **input_values = malloc(4 * sizeof(TractValue *));
-        // operator_node *head = NULL;
-        char *inference = NULL;
-        MyInferenceModel *inference_models = NULL;
-        int is_albert = strstr(model_name, "albert") != NULL;
 
-#if USE_MEMORY_ONLY == 1        
-        tract_load_nlp_model(model_name, &inference_models);
-        assert(inference_models);  
-#endif
-        // tract_value_from_bytes_llms(3, tokenizer, tokenizer_size, "Hi", &input_values);
-        // input_values[3] = NULL;
-        gettimeofday(&t1_inf, NULL);
-        if (is_albert) {
-            tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, inference_models ? &inference_models : NULL);
-        } else {
-            tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, "Hi");
-        }
-
-        gettimeofday(&t2_inf, NULL);
-        elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
-        elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
-
-        fprintf(stderr, "%s\nInference time to run a model: %f ms\n", inference, elapsed_time);
-        tract_free_cstring(inference);
+        check(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr));
         free(tokenizer);
-        for (int i = 0; i < num_models; i++) {
-            free(filenames[i]);
+
+        input_info_ptr->input_values = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
+        input_info_ptr->input_shapes = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
+        memset(input_info_ptr->input_shapes, 0, (NUMBER_INPUTS_LLM + 1) * sizeof(void *));
+        check(tract_value_from_bytes_llm(tokenizer_ptr, "Paris is the [MASK] of France.", input_info_ptr->input_values, input_info_ptr->input_shapes, NUMBER_INPUTS_LLM));
+        input_info_ptr->input_values[NUMBER_INPUTS_LLM] = NULL;
+        input_info_ptr->input_shapes[NUMBER_INPUTS_LLM] = NULL;
+
+        //all below create_tokenizer() working
+        // char *prompt = "Hi!";
+        // TractLlmInferenceModel *llm_inference_model = NULL;
+        // TractLlmTransformedModel *transformed_model = NULL;
+        // void **output_values = malloc(2 * sizeof(void *));
+
+        // check(tract_onnx_model_for_path_llm(model_name, &llm_inference_model));
+        // for (int i = 0; i < CACHE_STATS_RUNS; ++i) {
+        //     char *inference_result = NULL;
+        //     input_values = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
+        //     check(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_values));
+        //     input_values[NUMBER_INPUTS_LLM] = NULL;
+        //     for (int j = 0; j < NUM_TOKENS; ++j) {
+        //         // 2nd solution
+        //         //check(tract_inference_model_into_typed_or_optimized_llm(input_values, NUMBER_INPUTS_LLM, &llm_inference_model, &transformed_model));
+        //         //check(tract_model_into_runnable_and_run_llm(tokenizer_ptr, input_values, NUMBER_INPUTS_LLM, &transformed_model, &inference_result, output_values));
+        //         // 1st solurion, tested for leaks
+        //         check(tract_run_llms(model_name, tokenizer_ptr, &inference_result, input_values, NUMBER_INPUTS_LLM, output_values, &llm_inference_model));
+        //         output_values[1] = NULL;
+        //         fprintf(stderr, "%s\n", inference_result);  
+        //         tract_free_cstring(inference_result);
+        //         inference_result = NULL;
+
+        //         check(tract_update_input_values_llm(input_values, NUMBER_INPUTS_LLM, tokenizer_ptr, output_values, 1));
+        //     }
+        // }
+        // check(tract_llm_inference_model_release(&llm_inference_model));
+        // check(tract_free_llm_test(input_values, NUMBER_INPUTS_LLM));
+        // check(tract_free_llm_test(output_values, 1));
+        // free(input_values);
+        // free(output_values);
+        // for (int i = 0; i < num_models; i++) {
+        //     free(filenames[i]);
+        // }
+        // free(filenames);
+        // check(tract_free_tokenizer(&tokenizer_ptr));
+        //all above working
+    } else {
+        input_info_ptr->input_values = malloc((argc - 1) * sizeof(void *));
+        for (int i = 2; i < argc; i++) {
+            FILE *fd = fopen(argv[i], "rb");
+            fprintf(stderr, "Input: %s\n", argv[i]);
+            if (!fd) {
+                fprintf(stderr, "Error opening input file\n");
+                return 1;
+            }
+
+            size_t *shape = decode_pb(fd);
+            int calculated_shape = 1;
+            int flag = 0;
+            for (int i = 0; i < 4; i++) {
+                if (shape[i] == 0) break;
+                calculated_shape *= shape[i];
+                flag += 1;
+            }
+            fprintf(stderr, "Calculated shape: %d\n", calculated_shape);
+            float *image = (float *) malloc(calculated_shape * sizeof(float));
+            int image_floats = fread(image, sizeof(float), calculated_shape, fd);
+            assert(image_floats == calculated_shape);
+            fclose(fd);
+
+            TractValue *input_value = NULL;
+            check(tract_value_from_bytes(TRACT_DATUM_TYPE_F32, flag, shape, image, &input_value));
+            free(image);
+            input_info_ptr->input_values[i - 2] = (void *)input_value;
         }
-        free(filenames);
-        tract_free_onig();
-        return 0;
+        input_info_ptr->input_values[argc - 2] = NULL;
     }
-
-    TractValue **input_values = malloc((argc - 1) * sizeof(TractValue *));
-    for (int i = 2; i < argc; i++) {
-        FILE *fd = fopen(argv[i], "rb");
-        fprintf(stderr, "Input: %s\n", argv[i]);
-        if (!fd) {
-            fprintf(stderr, "Error opening input file\n");
-            return 1;
-        }
-
-        size_t *shape = decode_pb(fd);
-        int calculated_shape = 1;
-        int flag = 0;
-        for (int i = 0; i < 4; i++) {
-            if (shape[i] == 0) break;
-            calculated_shape *= shape[i];
-            flag += 1;
-        }
-        fprintf(stderr, "Calculated shape: %d\n", calculated_shape);
-        float *image = (float *) malloc(calculated_shape * sizeof(float));
-        int image_floats = fread(image, sizeof(float), calculated_shape, fd);
-        assert(image_floats == calculated_shape);
-        fclose(fd);
-
-        TractValue *input_value = NULL;
-        check(tract_value_from_bytes(TRACT_DATUM_TYPE_F32, flag, shape, image, &input_value));
-        free(image);
-        input_values[i - 2] = input_value;
-    }
-    input_values[argc - 2] = NULL;
-
+     
     operator_node *head = NULL;
-    TractInferenceModel **inference_models = NULL;
+    void **inference_models = NULL;
     inference_models = load_model_to_memory(filenames, num_models, &head);
 #ifndef USE_MEMORY_ONLY
-    free_inference_models(inference_models, num_models + 1);
+    free_inference_models(inference_models, num_models + 1, type);
     inference_models = NULL;
 #endif
 
-    head->outputs = input_values;
+    int is_llm = (strstr(model_name, "model.onnx_data") != NULL) || 
+                 (strstr(model_name, "albert") != NULL) || 
+                 (strstr(model_name, "gpt") != NULL) || 
+                 (strstr(model_name, "llama") != NULL) || 
+                 (strstr(model_name, "mistral") != NULL) ||
+                 (strstr(model_name, "deepseek") != NULL)
+                 ? 1 : 0;
 
-    char **visited_nodes = NULL;
-    int visited_count = 0;
-    for (int i = 0; i < CACHE_STATS_RUNS; i++) {
-        gettimeofday(&t1_inf, NULL);
-        
-        visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
-        visited_count = 0;
-        double sum = execute_tree(head, input_values, 0.0, visited_nodes, &visited_count, inference_models);
-        if (inference_models) free_inference_models(inference_models, num_models + 1);
+    int num_inputs = head->children[0]->num_inputs;
+    gettimeofday(&t1_inf, NULL);
+    for (int i = 0; i < CACHE_STATS_RUNS; ++i) {
+        head->outputs = input_info_ptr->input_values;
+        double sum = 0.0;
+
+        for (int j = 0; j < NUM_TOKENS; ++j) {
+            operator_node *last_node = execute_tree(head, input_info_ptr, &sum, (void **)inference_models, tokenizer_ptr);
+
+#ifdef USE_MEMORY_ONLY
+            free_inference_models(inference_models, num_models + 1, type);
+            inference_models = NULL;
+#endif
+
+            reset_node_visibility(head);
+
+            if (last_node) fprintf(stderr, "Last_node outputs %d, name: %s\n", last_node->num_outputs, last_node->model_name);
+            
+            if (CACHE_STATS_RUNS > 1 || NUM_TOKENS > 1) {
+                fprintf(stderr, "Run: %d/%d, %d/%d token(s) generated\n", i+1, CACHE_STATS_RUNS, j+1, NUM_TOKENS);
+                if (is_llm) {
+                    check(tract_update_input_values_llm(input_info_ptr->input_values, num_inputs, tokenizer_ptr, last_node->outputs, last_node->num_outputs));
+                }
+                free_operator_node_output(head, type);
+                reset_node_visibility(head);
+            }
+        }
+
         fprintf(stderr, "\nInference time to run a model: %f\n", sum);
-        visited_nodes[num_models] = NULL;
-        free(visited_nodes);
 
         gettimeofday(&t2_inf, NULL);
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
         fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
-
-        if (CACHE_STATS_RUNS > 1) {
-            fprintf(stderr, "Run: %d finished\n", i);
-            visited_nodes = NULL;
-            visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
-            visited_count = 0;
-            free_operator_node_output(head, visited_nodes, &visited_count);
-            visited_nodes[argc - 2] = NULL;
-            free(visited_nodes);
-            visited_nodes = NULL;
-        }
     }
 
     fprintf(stderr, "Total elapsed time: %f\n", elapsed_time);
-
-    visited_nodes = (char **) malloc((num_models + 1) * sizeof(char *));
-    visited_count = 0;
-    free_operator_node(head, visited_nodes, &visited_count);
-    visited_nodes[num_models] = NULL;
-    free(visited_nodes);
+    free_operator_node(head, type);
+    free(input_info_ptr->input_shapes);
+    free(input_info_ptr);
 
     for (int i = 0; i < num_models; i++) {
         free(filenames[i]);
     }
     free(filenames);
+    if (tokenizer_ptr) check(tract_free_tokenizer(&tokenizer_ptr));
     
     return 0;
 }
+
+//in use at exit: 28,764 bytes in 25 blocks

@@ -24,9 +24,6 @@ def parse_time(configuration, model_name, inference_time, df, index):
         print("No match found.")
 
     df.loc[index] = [configuration, model_name.replace('.onnx', ''), num_tokens, *numbers]
-    if configuration == "SGX-on Memory": 
-        print(numbers)
-        print(df.loc[index])
 
 def get_model_lists(size_models):
     if size_models == "small":

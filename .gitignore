@@ -9,3 +9,4 @@ src/*/src/occlum_server
 src/*/src/server
 src/*/ssl_client
 src/*/client
+scripts/benchmarks/memory_requirements_detailed*
