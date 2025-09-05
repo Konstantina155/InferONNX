@@ -20,7 +20,7 @@ def run_command_without_output(cmd, cwd=None):
 
 def init_client(use_sys_time):
     use_sys_time_operators = 1 if configuration == "memory_only_operators" else 0
-    use_memory_only = 0 if configuration == "on_disk" else 1
+    use_memory_only = 0 if "on_disk" in configuration else 1
 
     build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
     run_command_without_output(f"make clean && make {build_flags} occlum_server", cwd=f"{server_with_tls_path}/src")
@@ -59,7 +59,7 @@ def client_side(partition_folder, unique_id):
     command = f"{server_with_tls_path}/ssl_client models {path_}test_data_set_0/input_0.pb {path_}{partition_folder}"
     result = run_command_with_output(command)
 
-    if configuration == "on_disk":
+    if "on_disk" in configuration:
         extract_hex_numbers(result)
         tag_file = tag_file_path
     else:
@@ -93,6 +93,8 @@ def manage_connection():
                 file.write("\nSGX\n----\n")
 
         for i in range(num_runs):
+            if configuration == "on_disk":
+                run_command("sync; sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'")
             init_client(0)
             client = threading.Thread(args=(partition_folder, unique_id),target=client_side)
             client.start()
@@ -106,6 +108,8 @@ def manage_connection():
 
             if configuration == "memory_only_operators":
                 continue
+            elif configuration == "on_disk":
+                run_command("sync; sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'")
 
             init_client(1)
             client = threading.Thread(args=(partition_folder, unique_id),target=client_side)
@@ -130,8 +134,8 @@ def close_connection():
     output.wait()
 
 def main():
-    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
         exit(1)
 
     global configuration, entire_or_partition, num_runs, inferONNX_path
@@ -152,11 +156,18 @@ def main():
         "squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
         "efficientnet-lite4-11/", "inception-v3-12/", 
         "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
+
+        #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
     ]
 
     global partition_folder, occlum_user_space
     partition_folder = entire_or_partition if "partitions" in entire_or_partition else ""
-    occlum_user_space = ["300MB", "300MB", "300MB", "400MB", "700MB", "2GB", "2GB", "3GB"]
+    occlum_user_space = ["300MB", "300MB", "300MB", 
+                         "400MB", "700MB",
+                         "2GB", "2GB", "3GB",
+
+                         #"400MB", "800MB", "2GB",
+                        ]
 
 
     manage_connection()

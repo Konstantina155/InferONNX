@@ -22,7 +22,7 @@ def init(use_aes):
     if configuration == "memory_only_operators":
         use_sys_time_operators=1
         use_memory_only = 1
-    elif configuration != "on_disk":
+    elif "on_disk" not in configuration:
         use_memory_only = 1
 
     command = f"make clean && make USE_AES={use_aes} USE_MEMORY_ONLY={use_memory_only} USE_SYS_TIME_OPERATORS={use_sys_time_operators}"
@@ -30,7 +30,7 @@ def init(use_aes):
     run_command_without_output(command, cwd=f"{server_without_tls_path}/src")
 
 def client_side(unique_id):
-    client_command = f"{server_with_tls_path}/./ssl_client" if configuration == "tls_memory_only" else f"{server_without_tls_path}/./client"
+    client_command = f"{server_with_tls_path}/./ssl_client" if "tls" in configuration else f"{server_without_tls_path}/./client"
     
     tme.sleep(2)
 
@@ -44,7 +44,7 @@ def client_side(unique_id):
     command = f"{client_command} models {path_}test_data_set_0/input_0.pb {path_}"
     run_command_without_output(command)
 
-    if configuration == "on_disk":
+    if "on_disk" in configuration:
         run_command("sudo sysctl -w vm.drop_caches=3")
 
     command = f"{client_command} inputs 1 {path_}test_data_set_0/input_0.pb"
@@ -59,10 +59,12 @@ def manage_connection():
                 file.write("\nCPU\n----\n\n")
 
         for i in range(num_runs):
+            if configuration == "tls_on_disk":
+                run_command("sudo sysctl -w vm.drop_caches=3")
             client = threading.Thread(args=(unique_id,),target=client_side)
             client.start()
 
-            cwd = f"{server_with_tls_path}/src/" if configuration == "tls_memory_only" else f"{server_without_tls_path}/src/"
+            cwd = f"{server_with_tls_path}/src/" if "tls" in configuration else f"{server_without_tls_path}/src/"
             command = "./server"
             if configuration == "memory_only_operators":
                 command += f" >> ../../../memory_intensive_ops/{model_name[:-1]}.txt"
@@ -73,12 +75,12 @@ def manage_connection():
         unique_id += 1
 
 def close_connection():
-    client_command = f"{server_with_tls_path}/./ssl_client quit" if configuration == "tls_memory_only" else f"{server_without_tls_path}/./client quit"
+    client_command = f"{server_with_tls_path}/./ssl_client quit" if "tls" in configuration else f"{server_without_tls_path}/./client quit"
     run_command_without_output(client_command)
 
 def main():
-    if len(sys.argv) != 4 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "tls_memory_only"]:
-        print("Usage: python3 run_models_in_cpu.py <memory_only/memory_only_operators/on_disk/tls_memory_only> <number_of_runs> <path_to_inferONNX>")
+    if len(sys.argv) != 4 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "tls_memory_only", "tls_on_disk"]:
+        print("Usage: python3 run_models_in_cpu.py <memory_only/memory_only_operators/on_disk/tls_memory_only/tls_on_disk> <number_of_runs> <path_to_inferONNX>")
         exit(1)
 
     global configuration, num_runs, inferONNX_path
@@ -93,17 +95,19 @@ def main():
     path = [
         "squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
         "efficientnet-lite4-11/", "inception-v3-12/", 
-        "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
+        "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/",
+
+        #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
     ]
 
-    if configuration != "tls_memory_only":
+    if "tls" not in configuration:
         init(0)
     else:
         init_server_client()
 
     manage_connection()
 
-    if configuration != "tls_memory_only":
+    if "tls" not in configuration:
         run_command_without_output("make clean", cwd=server_without_tls_path)
         run_command_without_output("make clean", cwd=f"{server_without_tls_path}/src")
     else:

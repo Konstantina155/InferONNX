@@ -3,3 +3,4 @@ results/
 src/server_with_tls/inference_time_*
 src/server_without_tls/inference_time_*
 scripts/benchmarks/memory_requirements_*
+src/server_with_tls/scripts/standalone_inference
