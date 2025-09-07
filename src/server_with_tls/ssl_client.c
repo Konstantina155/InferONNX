@@ -21,13 +21,14 @@
 #include <unistd.h>
 
 #define SERVER_PORT "9998"
-#define SERVER_NAME "139.91.92.32"
+#define SERVER_NAME "localhost" //server's IP when client in different machine
 
 #define DEBUG_LEVEL 1
 #define BUF_SIZE 4096
 #define TAG_SIZE 16
-#define CHUNK_SIZE (100L * 1024 * 1024)
-
+#if NUM_TOKENS > 0
+    #define CHUNK_SIZE (100L * 1024 * 1024)
+#endif
 typedef struct __attribute__((packed)) {
     int command;
     int id;
@@ -506,10 +507,12 @@ send_request(char *client_request, size_t request_len, int mode)
     }
 
     // addition
+#if NUM_TOKENS > 0
     if (enable_keepalive(server_fd.fd) < 0) {
         fprintf(stderr, "Failed to enable keepalive on listening socket\n");
         goto exit;
     }
+#endif
 
     mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
@@ -576,6 +579,7 @@ send_request(char *client_request, size_t request_len, int mode)
     fprintf(stderr, " %ld bytes\nLength: %s\n", total_written, data_size_str);
 
     total_written = 0;
+#if NUM_TOKENS > 0
     while (total_written < request_len) {
         size_t to_send = (request_len - total_written > CHUNK_SIZE) ? CHUNK_SIZE : (request_len - total_written);
         size_t sent_chunk = 0;
@@ -592,6 +596,16 @@ send_request(char *client_request, size_t request_len, int mode)
         total_written += to_send;   
         fprintf(stderr, "Chunk sent: %lu bytes, Total sent: %lu bytes\n", to_send, total_written);
     }
+#else 
+    while (total_written < request_len) {
+        ret = mbedtls_ssl_write(&ssl, (unsigned char *)(client_request + total_written), request_len - total_written);
+        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE && ret < 0) {
+            fprintf(stderr, " failed\n   mbedtls_ssl_write returned %d\n", ret);
+            goto exit;
+        }
+        total_written += ret;
+    }
+#endif
 
     fprintf(stderr, "Bytes written for message: %ld\n\n", total_written);
 

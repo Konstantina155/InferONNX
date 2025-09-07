@@ -853,10 +853,12 @@ main(void)
     fprintf(stderr, " ok\n");
 
     // addition
+#if NUM_TOKENS > 0
     if (enable_keepalive(listen_fd.fd) < 0) {
         fprintf(stderr, "Failed to enable keepalive on listening socket\n");
         goto exit;
     }
+#endif
 
     /*
      * 4. Setup stuff
@@ -1003,9 +1005,10 @@ reset:
             goto exit;
         }
 
+        bytes_read = 0;
+#if NUM_TOKENS > 0
         char *chunk_buffer = malloc(CHUNK_SIZE);
         assert(chunk_buffer);
-        bytes_read = 0;
         while (bytes_read < request_size) {
             size_t to_read = (request_size - bytes_read > CHUNK_SIZE) ? CHUNK_SIZE : (request_size - bytes_read);
             size_t chunk_offset = 0;
@@ -1043,6 +1046,36 @@ reset:
         }
         client_request[request_size] = '\0';
         free(chunk_buffer);
+#else 
+        while (bytes_read < (size_t) request_size) {
+            ret = mbedtls_ssl_read(&ssl, (unsigned char *) (client_request + bytes_read), request_size - bytes_read);
+
+            if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+                continue;
+            }
+
+            if (ret <= 0) {
+                switch (ret) {
+                    case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+                        fprintf(stderr, " Connection was closed gracefully\n");
+                        break;
+
+                    case MBEDTLS_ERR_NET_CONN_RESET:
+                        fprintf(stderr, " Connection was reset by peer\n");
+                        break;
+
+                    default:
+                        fprintf(stderr, " mbedtls_ssl_read returned -0x%x\n", (unsigned int) -ret);
+                        free(client_request);
+                        goto reset;
+                }
+
+                break;
+            }
+            bytes_read += ret;
+        }
+        client_request[request_size] = '\0';
+#endif
 
         fprintf(stderr, "Bytes received: %ld\n", bytes_read);
 
