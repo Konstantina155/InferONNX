@@ -20,6 +20,7 @@ initialize_inference_models(int num_models)
     return inference_models;
 }
 
+#if NUM_TOKENS != 0
 static MyInferenceModel **
 initialize_my_inference_models(int num_models)
 {
@@ -35,6 +36,7 @@ initialize_my_inference_models(int num_models)
 
     return my_inference_models;
 }
+#endif
 
 static void
 onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, MyInferenceModel *my_inference_model, int index, operator_node *head, char *model_name)
@@ -46,25 +48,23 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, MyInfe
     char **output_names = NULL;
     int8_t *output_name = NULL;
 
-    
-    if (inference_model) {
-        check(tract_inference_model_input_count(inference_model, &num_inputs));
-        input_names = malloc((num_inputs + 1) * sizeof(char *));
-        for (int i = 0; i < (int)num_inputs; i++) {
-            check(tract_inference_model_input_name(inference_model, i, &input_name));
-            input_names[i] = input_name;
-        }
-        input_names[num_inputs] = NULL;
-
-        check(tract_inference_model_output_count(inference_model, &num_outputs));
-        output_names = malloc((num_outputs + 1) * sizeof(char *));
-        for (int i = 0; i < (int)num_outputs; i++) {
-            check(tract_inference_model_output_name(inference_model, i, &output_name));
-            output_names[i] = (char *)output_name;
-        }
-        output_names[num_outputs] = NULL;
+#if NUM_TOKENS == 0
+    check(tract_inference_model_input_count(inference_model, &num_inputs));
+    input_names = malloc((num_inputs + 1) * sizeof(char *));
+    for (int i = 0; i < (int)num_inputs; i++) {
+        check(tract_inference_model_input_name(inference_model, i, &input_name));
+        input_names[i] = input_name;
     }
-#ifdef USE_AES
+    input_names[num_inputs] = NULL;
+
+    check(tract_inference_model_output_count(inference_model, &num_outputs));
+    output_names = malloc((num_outputs + 1) * sizeof(char *));
+    for (int i = 0; i < (int)num_outputs; i++) {
+        check(tract_inference_model_output_name(inference_model, i, &output_name));
+        output_names[i] = (char *)output_name;
+    }
+    output_names[num_outputs] = NULL;
+#else
     if (my_inference_model) {
         check(tract_my_inference_model_input_count(my_inference_model, &num_inputs));
         input_names = malloc((num_inputs + 1) * sizeof(char *));
@@ -157,6 +157,7 @@ onnx_model_for_path(char *model_name, TractInferenceModel *inference_model, stru
     return inference_model;
 }
 
+        #if NUM_TOKENS != 0
 static MyInferenceModel *
 onnx_model_for_path_tokenizer(char *model_name, MyInferenceModel *my_inference_model, struct EncryptionParameters *params, struct EncryptionParameters *params_weights) {
     // Load the model
@@ -169,6 +170,7 @@ onnx_model_for_path_tokenizer(char *model_name, MyInferenceModel *my_inference_m
 
     return my_inference_model;
 }
+        #endif
     #endif
 
 void
@@ -187,7 +189,6 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     uint8_t *key = (uint8_t *)malloc(KEY_BYTES);
     uint8_t *iv = (uint8_t *)malloc(IV_BYTES);
     uint8_t *tag = NULL;
-    uint8_t *tag_weights = NULL;
     uint8_t *aad = (uint8_t *)malloc(ADD_DATA_BYTES);
     if (!key || !iv || !aad) {
         fprintf(stderr, "Memory allocation for key, iv, tag, aad failed\n");
@@ -205,12 +206,15 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
         free(params);
         return;
     }
-
+#elif NUM_TOKENS != 0
     EncryptionParameters *params_weights = (EncryptionParameters *)malloc(sizeof(EncryptionParameters));
     if (!params_weights) {
         fprintf(stderr, "Memory allocation for params_weights failed\n");
         return;
     }
+    uint8_t *tag_weights = NULL;
+    MyInferenceModel **my_inference_models = initialize_my_inference_models(model_count + 1);
+    int index = 0;
 #endif
 
     char **names = (*m)->names;
@@ -228,13 +232,10 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     }
 
     TractInferenceModel **inference_models = initialize_inference_models(model_count + 1);
-    MyInferenceModel **my_inference_models = initialize_my_inference_models(model_count + 1);
-
     int initial_length = 10;
     operator_io **io = init_operator_io(initial_length);
     assert(io);
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
-    int index = 0;
 
     for (int i = 1; i < model_count + 1; i++) {
         fprintf(stderr, "Name: %s\n", names[i-1]);
@@ -251,15 +252,7 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
             return;
         }
 
-        int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
-                 (strstr(names[0], "albert") != NULL) || 
-                 (strstr(names[0], "gpt") != NULL) || 
-                 (strstr(names[0], "llama") != NULL) || 
-                 (strstr(names[0], "mistral") != NULL) ||
-                 (strstr(names[0], "deepseek") != NULL)
-                 ? 1 : 0;
-
-        if (is_llm) {
+        #if NUM_TOKENS != 0
             if (strstr(names[i-1], "model.onnx_data") != NULL) {
                 my_inference_models[i] = NULL;
                 tag_weights = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
@@ -297,7 +290,7 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
                     return;
                 }
             }
-        } else {
+        #else
             memcpy(tag, tags[i-1], TAG_BYTES * 2);
             tag[TAG_BYTES * 2] = '\0';
             params->tag = tag;
@@ -308,10 +301,9 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
                 free(iv);
                 free(aad);
                 free(params);
-                free(params_weights);
                 return;
             }
-        }
+        #endif
         fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
 #endif
 
@@ -331,7 +323,11 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
         }
         previous = curr_node;
 
+    #if NUM_TOKENS != 0
         onnx_model_inputs(io, inference_models[i], my_inference_models[index], i, head, names[i-1]);
+    #else
+        onnx_model_inputs(io, inference_models[i], NULL, i, head, names[i-1]);
+    #endif
     #if USE_MEMORY_ONLY == 1 || NUM_TOKENS == 0
         free(tag);
     #endif
@@ -341,8 +337,9 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     free(key);
     free(iv);
     free(aad);
-    if (tag_weights) free(tag_weights);
     free(params);
+#elif NUM_TOKENS != 0
+    free(tag_weights);
     free(params_weights);
 #endif
     free_operator_io(io);
@@ -351,9 +348,15 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
 
 #ifdef USE_MEMORY_ONLY
     (*m)->inference_models = inference_models;
-    (*m)->my_inference_models = my_inference_models;
+    #if NUM_TOKENS != 0
+        (*m)->my_inference_models = my_inference_models;
+    #endif
 #else
-    free_inference_models(inference_models, my_inference_models, model_count + 1);
+    #if NUM_TOKENS != 0
+        free_inference_models(inference_models, my_inference_models, model_count + 1);
+    #else
+        free_inference_models(inference_models, NULL, model_count + 1);
+    #endif
 #endif
 }
 
@@ -1147,7 +1150,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         return NULL;
     }
 
-    if (!images && tokenizer_size > 0){
+    if (!images && tokenizer_size > 0) {
         int model_count = get_array_size((void **)m->names);
         fprintf(stderr, "Model count: %d\n", model_count);
         if (model_count != count_tags) {

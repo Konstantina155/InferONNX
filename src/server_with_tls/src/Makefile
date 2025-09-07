@@ -25,7 +25,7 @@ ifeq ($(USE_AES), 1)
     CFLAGS += -DUSE_AES
 endif
 ifeq ($(USE_AES), 1)
-	 LDFLAGS += -I../tract_aes -ltract -lm -lpthread -ldl
+	LDFLAGS += -I../tract_aes -ltract -lm -lpthread -ldl
 	ifeq ($(USE_SYS_TIME_OPERATORS), 1)
 		LDFLAGS += -L../tract_aes/use_sys_time
 	else
