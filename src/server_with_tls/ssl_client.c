@@ -445,7 +445,7 @@ send_request(char *client_request, size_t request_len, int mode)
 
     char *cert_path = NULL;
 #ifdef USE_DEBUG
-    cert_path = "../../../certificates/cert.pem";
+    cert_path = "../../../../certificates/cert.pem";
 #else
     cert_path = "../certificates/cert.pem";
 #endif
@@ -656,7 +656,7 @@ send_request(char *client_request, size_t request_len, int mode)
             #if USE_STRIP == 1
                     fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
             #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
             #endif
         #else
             #if USE_AES == 1
@@ -883,7 +883,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
             #if USE_STRIP == 1
                     fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
             #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
             #endif
         #else
             #if USE_AES == 1
@@ -1023,11 +1023,11 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
             req_original.size_inputs[i] = temp_calculated_shape;
             fprintf(stderr, "Size of input: %ld\n", req_original.size_inputs[i]);
 
-            fclose(fd);
-
             req_original.tokenizer_size = 0;
             req_original.tokenizer = NULL;
         }
+
+        fclose(fd);
     }
     
     size_t bufLen = calculate_buffer_size(&req_original);

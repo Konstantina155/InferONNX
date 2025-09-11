@@ -32,13 +32,15 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
         lines = file.readlines()
 
     for i in reversed(range(len(lines))):
-        if f"Model: {model_name}" in lines[i]: #for {num_tokens} tokens
+        if f"Model: {model_name}" in lines[i]:
             if count == model_match_index:
                 if lines[i+minimum_stats+1] == "\n":
                     if "Inference time to run a model:" not in lines[i+1]:
                         stats = minimum_stats
                     else:
                         continue
+                elif "inference_time_in_occlum_memory_only_aes.txt" in filename and is_llm:
+                    stats = 8
                 else:
                     stats = 9
                 

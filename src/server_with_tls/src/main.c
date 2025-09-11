@@ -882,13 +882,22 @@ main(void)
      * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
      * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
      */
-    ret = mbedtls_x509_crt_parse_file(&srvcert, "../../../../certificates/cert.pem");
+    char *cert_path = NULL, *key_path = NULL;
+#ifdef USE_DEBUG
+    cert_path = "../../../../../certificates/cert.pem";
+    key_path = "../../../../../certificates/key.pem";
+#else
+    cert_path = "../../../../certificates/cert.pem";
+    key_path = "../../../../certificates/key.pem";
+#endif
+
+    ret = mbedtls_x509_crt_parse_file(&srvcert, cert_path);
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_x509_crt_parse_file returned %d\n", ret);
         goto exit;
     }
 
-    ret =  mbedtls_pk_parse_keyfile(&pkey, "../../../../certificates/key.pem", NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
+    ret =  mbedtls_pk_parse_keyfile(&pkey, key_path, NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
 
     if (ret != 0) {
         fprintf(stderr, " failed\n   mbedtls_pk_parse_keyfile returned %d\n", ret);

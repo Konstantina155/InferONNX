@@ -177,16 +177,20 @@ enum TRACT_RESULT tract_my_inference_model_output_name(const struct MyInferenceM
                                                        uintptr_t output,
                                                        int8_t **name);
 
+enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
+                                         uintptr_t tokenizer_buffer_size,
+                                         void **tokenizer_ptr);
+
+enum TRACT_RESULT tract_free_tokenizer(void **tokenizer_ptr);
+
 enum TRACT_RESULT tract_run_albert(const char *model_path,
-                                   const uint8_t *tokenizer_buffer,
-                                   uintptr_t tokenizer_buffer_size,
+                                   void *tokenizer_ptr,
                                    char **inference,
                                    const EncryptionParameters *params,
                                    struct MyInferenceModel **inference_model);
 
 enum TRACT_RESULT tract_run_gpt2(const char *model_path,
-                                 const uint8_t *tokenizer_buffer,
-                                 uintptr_t tokenizer_buffer_size,
+                                 void *tokenizer_ptr,
                                  char **inference,
                                  const EncryptionParameters *params,
                                  uintptr_t num_tokens,
@@ -194,8 +198,7 @@ enum TRACT_RESULT tract_run_gpt2(const char *model_path,
                                  struct MyInferenceModel **inference_model);
 
 enum TRACT_RESULT tract_run_latest_models(const char *model_path,
-                                          const uint8_t *tokenizer_buffer,
-                                          uintptr_t tokenizer_buffer_size,
+                                          void *tokenizer_ptr,
                                           char **inference,
                                           const EncryptionParameters *params,
                                           const EncryptionParameters *params_weights,
