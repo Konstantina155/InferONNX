@@ -285,7 +285,7 @@ def main():
             f"{inferONNX_path}/src/server_without_tls/inference_time_cpu_memory_only_no_aes.txt",
             f"{inferONNX_path}/src/server_with_tls/inference_time_outside_occlum_memory_only_no_aes.txt",
             f"{inferONNX_path}/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt",
-            f"{inferONNX_path}/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt"]
+            f"{inferONNX_path}/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt"]
     configurations = ['CPU-on Disk', 'CPU-on Memory', 'CPU-TLS/SSL enabled', 'SGX-on Memory', 'SGX-on Disk']
 
     num_partitions = [0] * 8

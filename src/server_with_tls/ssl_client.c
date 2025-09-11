@@ -661,19 +661,39 @@ send_request(char *client_request, size_t request_len, int mode)
         #else
             #if USE_AES == 1
                 #if USE_STRIP == 1
-                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                    #ifdef USE_FILE_CACHING
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped_file_caching.txt", "a");
+                    #else
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                    #endif   
                 #else   
-                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
+                    #ifdef USE_FILE_CACHING
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt", "a");
+                    #else
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
+                    #endif        
                 #endif
             #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+                #ifdef USE_FILE_CACHING
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes_file_caching.txt", "a");
+                #else
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+                #endif   
             #endif
         #endif
     #else
         #if USE_AES == 1
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
+            #ifdef USE_FILE_CACHING
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_memory_only_aes.txt", "a");
+            #else 
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
+            #endif
         #else
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+            #ifdef USE_FILE_CACHING
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_memory_only_no_aes.txt", "a");
+            #else 
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+            #endif
         #endif
     #endif
 
@@ -888,19 +908,39 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         #else
             #if USE_AES == 1
                 #if USE_STRIP == 1
-                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                    #ifdef USE_FILE_CACHING
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped_file_caching.txt", "a");
+                    #else
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt", "a");
+                    #endif  
                 #else
-                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
+                    #ifdef USE_FILE_CACHING
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt", "a");
+                    #else
+                        fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt", "a");
+                    #endif   
                 #endif
             #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+                #ifdef USE_FILE_CACHING
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes_file_caching.txt", "a");
+                #else
+                    fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_no_aes.txt", "a");
+                #endif
             #endif
         #endif
     #else
         #if USE_AES == 1
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
+            #ifdef USE_FILE_CACHING
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_memory_only_aes.txt", "a");
+            #else 
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_aes.txt", "a");
+            #endif
         #else
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+            #ifdef USE_FILE_CACHING
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_memory_only_no_aes.txt", "a");
+            #else 
+                fd = fopen("../InferONNX/src/server_with_tls/inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+            #endif
         #endif
     #endif
 

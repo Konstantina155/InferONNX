@@ -18,7 +18,11 @@ int remove_model_from_table(onnx_table *table, char *id);
 
 void free_inference_model(TractInferenceModel *inference_model);
 
-void free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length);
+#ifdef USE_AES
+    void free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length);
+#else
+    void free_inference_models(TractInferenceModel **inference_models, int length);
+#endif
 
 void deallocate_model(model *current);
 
