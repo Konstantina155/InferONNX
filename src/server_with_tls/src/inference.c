@@ -20,7 +20,7 @@ initialize_inference_models(int num_models)
     return inference_models;
 }
 
-#if NUM_TOKENS != 0
+#if NUM_TOKENS != 0 && USE_AES == 1
 static MyInferenceModel **
 initialize_my_inference_models(int num_models)
 {
@@ -48,23 +48,24 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, MyInfe
     char **output_names = NULL;
     int8_t *output_name = NULL;
 
-#if NUM_TOKENS == 0
-    check(tract_inference_model_input_count(inference_model, &num_inputs));
-    input_names = malloc((num_inputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_inputs; i++) {
-        check(tract_inference_model_input_name(inference_model, i, &input_name));
-        input_names[i] = input_name;
-    }
-    input_names[num_inputs] = NULL;
+    if (inference_model) {
+        check(tract_inference_model_input_count(inference_model, &num_inputs));
+        input_names = malloc((num_inputs + 1) * sizeof(char *));
+        for (int i = 0; i < (int)num_inputs; i++) {
+            check(tract_inference_model_input_name(inference_model, i, &input_name));
+            input_names[i] = input_name;
+        }
+        input_names[num_inputs] = NULL;
 
-    check(tract_inference_model_output_count(inference_model, &num_outputs));
-    output_names = malloc((num_outputs + 1) * sizeof(char *));
-    for (int i = 0; i < (int)num_outputs; i++) {
-        check(tract_inference_model_output_name(inference_model, i, &output_name));
-        output_names[i] = (char *)output_name;
+        check(tract_inference_model_output_count(inference_model, &num_outputs));
+        output_names = malloc((num_outputs + 1) * sizeof(char *));
+        for (int i = 0; i < (int)num_outputs; i++) {
+            check(tract_inference_model_output_name(inference_model, i, &output_name));
+            output_names[i] = (char *)output_name;
+        }
+        output_names[num_outputs] = NULL;
     }
-    output_names[num_outputs] = NULL;
-#else
+#if NUM_TOKENS != 0 && USE_AES == 1
     if (my_inference_model) {
         check(tract_my_inference_model_input_count(my_inference_model, &num_inputs));
         input_names = malloc((num_inputs + 1) * sizeof(char *));
@@ -127,7 +128,7 @@ onnx_model_inputs(operator_io **io, TractInferenceModel *inference_model, MyInfe
     free(output_names);
 
     update_node(io, index, head);
-    print_operator_io(io);
+    //print_operator_io(io);
 }
 
 #ifdef USE_AES
@@ -206,15 +207,15 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
         free(params);
         return;
     }
-#elif NUM_TOKENS != 0
+#endif
+#if NUM_TOKENS != 0
     EncryptionParameters *params_weights = (EncryptionParameters *)malloc(sizeof(EncryptionParameters));
     if (!params_weights) {
         fprintf(stderr, "Memory allocation for params_weights failed\n");
         return;
     }
-    uint8_t *tag_weights = NULL;
-    MyInferenceModel **my_inference_models = initialize_my_inference_models(model_count + 1);
     int index = 0;
+    uint8_t *tag_weights = NULL;
 #endif
 
     char **names = (*m)->names;
@@ -232,6 +233,9 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
     }
 
     TractInferenceModel **inference_models = initialize_inference_models(model_count + 1);
+    #if NUM_TOKENS != 0
+        MyInferenceModel **my_inference_models = initialize_my_inference_models(model_count + 1);
+    #endif
     int initial_length = 10;
     operator_io **io = init_operator_io(initial_length);
     assert(io);
@@ -252,7 +256,15 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
             return;
         }
 
-        #if NUM_TOKENS != 0
+        int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
+                 (strstr(names[0], "albert") != NULL) || 
+                 (strstr(names[0], "gpt") != NULL) || 
+                 (strstr(names[0], "llama") != NULL) || 
+                 (strstr(names[0], "mistral") != NULL) ||
+                 (strstr(names[0], "deepseek") != NULL)
+                 ? 1 : 0;
+
+        if (is_llm) {
             if (strstr(names[i-1], "model.onnx_data") != NULL) {
                 my_inference_models[i] = NULL;
                 tag_weights = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
@@ -290,7 +302,7 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
                     return;
                 }
             }
-        #else
+        } else {
             memcpy(tag, tags[i-1], TAG_BYTES * 2);
             tag[TAG_BYTES * 2] = '\0';
             params->tag = tag;
@@ -303,9 +315,33 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
                 free(params);
                 return;
             }
-        #endif
-        fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
+        }
+#elif NUM_TOKENS == 0
+        tag = (uint8_t *)malloc(TAG_BYTES * 2 + 1);
+        if (!tag) {
+            fprintf(stderr, "Memory allocation for tag failed\n");
+            free(tag);
+            free(key);
+            free(iv);
+            free(aad);
+            free(params);
+            return;
+        }
+
+        memcpy(tag, tags[i-1], TAG_BYTES * 2);
+        tag[TAG_BYTES * 2] = '\0';
+        params->tag = tag;
+        inference_models[i] = onnx_model_for_path(names[i-1], inference_models[i], params);
+        if (!inference_models[i]) {
+            free(tag);
+            free(key);
+            free(iv);
+            free(aad);
+            free(params);
+            return;
+        }
 #endif
+        fprintf(stderr, "Tag in load_model_to_memory: %s\n", tag);
 
         if (i == initial_length) {
             resize_operators_io(&io, initial_length + 5, initial_length);
@@ -652,11 +688,13 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
             }
         }
         
-        int is_albert = strstr(model_name, "albert") != NULL;
-
+        int is_albert = strstr(model_name, "albert") != NULL, is_gpt2 = strstr(model_name, "gpt2") != NULL;
+        fprintf(stderr, "Model name: %s\n", model_name);
         gettimeofday(&t1_inf, NULL);
         if (is_albert) {
             check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL), NULL);
+        } else if (is_gpt2) {
+            check_ret(tract_run_gpt2(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, "Hi", NULL), NULL);
         } else {
             check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NUM_TOKENS, "Hi"), NULL);
         }
@@ -820,16 +858,21 @@ inference_memory_only(float **images, int num_images, uint8_t *tokenizer, int to
             }
         }
         MyInferenceModel *inference_model = m->my_inference_models[1];
+        void *tokenizer_ptr = NULL;
+        check_ret(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
         
-        int is_albert = strstr(model_name, "albert") != NULL;
+        int is_albert = strstr(model_name, "albert") != NULL, is_gpt2 = strstr(model_name, "gpt2") != NULL;
 
+        fprintf(stderr, "Model name: %s\n", model_name);
 #ifdef USE_SYS_TIME
     gettimeofday(&t1_inf, NULL);
 #endif
         if (is_albert) {
-            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, NULL, &inference_model), NULL);
+            check_ret(tract_run_albert(model_name, tokenizer_ptr, &inference, NULL, &inference_model), NULL);
+        } else if (is_gpt2) {
+            check_ret(tract_run_gpt2(model_name, tokenizer_ptr, &inference, NULL, NUM_TOKENS, "Hi", &inference_model), NULL);
         } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, NULL, NULL, NUM_TOKENS, "Hi", &inference_model), NULL);
+            check_ret(tract_run_latest_models(model_name, tokenizer_ptr, &inference, NULL, NULL, NUM_TOKENS, "Hi", &inference_model), NULL);
         }
 
 #ifdef USE_SYS_TIME
@@ -839,6 +882,7 @@ inference_memory_only(float **images, int num_images, uint8_t *tokenizer, int to
 #else
         elapsed_time = 0.0;
 #endif
+        check_ret(tract_free_tokenizer(&tokenizer_ptr), NULL);
         
 #ifdef USE_SYS_TIME
         FILE *fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
@@ -885,7 +929,7 @@ inference_memory_only(float **images, int num_images, uint8_t *tokenizer, int to
             fprintf(stderr, "Error allocating memory for temp_image\n");
             return NULL;
         }
-        memcpy(temp_image, images[i] + 4, size * sizeof(float));
+        memcpy(temp_image, images[i] + flag, size * sizeof(float));
 
         input_value = NULL;
         check_ret(tract_value_from_bytes(TRACT_DATUM_TYPE_F32, flag, shape, temp_image, &input_value), NULL);
@@ -1210,17 +1254,24 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
                 params_weights->tag = tag2;
             }
         }
+
+        void *tokenizer_ptr = NULL;
+        check_ret(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
+
         char *inference = NULL;
-        int is_albert = strstr(model_name, "albert") != NULL;
+        int is_albert = strstr(model_name, "albert") != NULL, is_gpt2 = strstr(model_name, "gpt2") != NULL;
         fprintf(stderr, "Server: Starting inference (this may take a while)...\n");
 
+        fprintf(stderr, "Model name: %s\n", model_name);
 #ifdef USE_SYS_TIME
     gettimeofday(&t1_inf, NULL);
 #endif
         if (is_albert) {
-            check_ret(tract_run_albert(model_name, tokenizer, tokenizer_size, &inference, params, NULL), NULL);
+            check_ret(tract_run_albert(model_name, tokenizer_ptr, &inference, params, NULL), NULL);
+        } else if (is_gpt2) {
+            check_ret(tract_run_gpt2(model_name, tokenizer_ptr, &inference, params, NUM_TOKENS, "Hi", NULL), NULL);
         } else {
-            check_ret(tract_run_latest_models(model_name, tokenizer, tokenizer_size, &inference, params, params_weights, NUM_TOKENS, "Hi", NULL), NULL);
+            check_ret(tract_run_latest_models(model_name, tokenizer_ptr, &inference, params, params_weights, NUM_TOKENS, "Hi", NULL), NULL);
         }
 #ifdef USE_SYS_TIME
         gettimeofday(&t2_inf, NULL);
@@ -1229,6 +1280,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
 #else
         elapsed_time = 0.0;
 #endif
+        check_ret(tract_free_tokenizer(&tokenizer_ptr), NULL);
 
         fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
         
