@@ -21,10 +21,11 @@ def run_command_without_output(cmd, cwd=None):
 def init_client(use_sys_time, num_tokens):
     use_sys_time_operators = 1 if configuration == "memory_only_operators" else 0
     use_memory_only = 0 if "on_disk" in configuration else 1
+    use_file_caching = 1 if configuration == "on_disk_caching" else 0
 
     build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators} NUM_TOKENS={num_tokens}"
     run_command_without_output(f"make clean && make {build_flags} occlum_server", cwd=f"{server_with_tls_path}/src")
-    run_command_without_output(f"make clean && make {build_flags}", cwd=server_with_tls_path)
+    run_command_without_output(f"make clean && make {build_flags} USE_FILE_CACHING={use_file_caching}", cwd=server_with_tls_path)
 
 def modify_occlum_json(user_space):
     file_path = f'{path_to_occlum}/occlum_workspace/Occlum.json'
@@ -132,6 +133,8 @@ def manage_connection():
             
             if configuration == "memory_only":
                 file_path = f"{server_with_tls_path}/inference_time_in_occlum_memory_only_aes.txt"
+            elif configuration == "on_disk_caching":
+                file_path = f"{server_with_tls_path}/inference_time_in_occlum_on_disk_aes_file_caching.txt"
             else:
                 file_path = f"{server_with_tls_path}/inference_time_in_occlum_on_disk_aes.txt"
 

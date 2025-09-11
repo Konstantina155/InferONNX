@@ -5,6 +5,7 @@ USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
 USE_DEBUG ?= 0
 NUM_TOKENS ?= 10
+USE_FILE_CACHING ?= 0
 
 CFLAGS = -Wall -Wextra -pedantic -g -std=gnu11
 LDFLAGS = -I../include -L ../lib -lmbedtls -lmbedx509 -lmbedcrypto
@@ -14,6 +15,9 @@ ifeq ($(USE_OCCLUM), 1)
     CFLAGS += -DUSE_OCCLUM
 else
 	CC = gcc
+	ifeq ($(USE_FILE_CACHING), 1)
+		CFLAGS += -DUSE_FILE_CACHING
+	endif
 endif
 ifeq ($(USE_SYS_TIME), 1)
     CFLAGS += -DUSE_SYS_TIME

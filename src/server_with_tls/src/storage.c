@@ -173,13 +173,22 @@ void
 free_inference_model(TractInferenceModel *inference_model)
 {
     assert(inference_model);
+#ifdef USE_AES
     if (tract_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
         fprintf(stderr, "Error releasing inference model\n");
         return;
     }
+#else
+    if (tract_cnn_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+        fprintf(stderr, "Error releasing inference model\n");
+        return;
+    }
+#endif
+    
     assert(!inference_model);
 }
 
+#ifdef USE_AES
 void
 free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length)
 {
@@ -192,6 +201,19 @@ free_inference_models(TractInferenceModel **inference_models, MyInferenceModel *
     if (my_inference_models) free(my_inference_models);
     free(inference_models);
 }
+#else
+void
+free_inference_models(TractInferenceModel **inference_models, int length)
+{
+    assert(inference_models);
+    for (int i = 0; i < (length + 1); ++i) {
+        if (inference_models[i]) {
+            free_inference_model(inference_models[i]);
+        }
+    }
+    free(inference_models);
+}
+#endif
 
 void
 free_input_indexes(int **input_indexes, int length)
@@ -216,7 +238,11 @@ deallocate_model(model *current)
         free(current->names[i]);
     }
     free(current->names);
-    if (current->inference_models) free_inference_models(current->inference_models, current->my_inference_models, current->size + 1);
+#ifdef USE_AES
+    if (current->inference_models || current->my_inference_models) free_inference_models(current->inference_models, current->my_inference_models, current->size + 1);
+#else
+    if (current->inference_models) free_inference_models(current->inference_models, current->size + 1);
+#endif
     char **visited_nodes = (char **) malloc((current->size + 1) * sizeof(char *));
     int visited_count = 0;
     free_operator_node(current->head, visited_nodes, &visited_count);
@@ -308,11 +334,13 @@ print_models(model *m, int index)
         } else {
             fprintf(stderr, ",\n   TractInferenceModel: (null)");
         }
+#ifdef USE_AES
         if (current->my_inference_models) {
             fprintf(stderr, ",\n   MyInferenceModel: (not null)");
         } else {
             fprintf(stderr, ",\n   MyInferenceModel: (null)");
         }
+#endif
         if (current->head) {
             fprintf(stderr, ",\n   operator_node: (not null)");
         } else {
@@ -625,10 +653,17 @@ free_operator_node(operator_node *node, char **visited_nodes, int *visited_count
 
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
+#ifdef USE_AES
             if (tract_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value\n");
                 return;
             }
+#else
+            if (tract_cnn_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error destroying tract value\n");
+                return;
+            }
+#endif
         }
         free(node->outputs);
     }

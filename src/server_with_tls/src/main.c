@@ -520,7 +520,9 @@ free_request(request *req_original)
     }
     if (req_original->tokenizer != NULL) {
         free(req_original->tokenizer);
+#ifdef USE_AES        
         tract_free_onig();
+#endif
     }
 }
 
@@ -658,7 +660,6 @@ handle_request(char *client_request, onnx_table *table)
         memset(m->IV, 0, IV_BYTES);
         memset(m->AAD, 0, ADD_DATA_BYTES);
         m->inference_models = NULL;
-        m->my_inference_models = NULL;
         
         load_model_to_memory(&m);
 
@@ -1227,39 +1228,49 @@ reset:
 
     if (strstr(response, "Inference:") != NULL) {
 #ifndef USE_DEBUG
-            FILE *fd = NULL;
+        FILE *fd = NULL;
+        char *file_path = NULL;
     #ifdef USE_AES
-            fd = fopen("../inference_time_outside_occlum_on_disk_aes.txt", "a");
+        #ifdef USE_FILE_CACHING
+            file_path = "../inference_time_outside_occlum_memory_only_aes.txt";
+        #else
+            file_path = "../inference_time_outside_occlum_on_disk_aes.txt";
+        #endif
     #else
-            fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        #ifdef USE_FILE_CACHING
+            file_path = "../inference_time_outside_occlum_memory_only_no_aes.txt";
+        #else
+            file_path = "../inference_time_outside_occlum_on_disk_no_aes.txt";
+        #endif
     #endif
+            fd = fopen(file_path, "a");
             if (!fd) {
-                fprintf(stderr, "Error opening file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error opening file inference_time_outside_occlum_aes/no_aes.txt\n");
                 goto exit;
             }
 
             if (fprintf(fd, "Time to perform handshake: %f ms\n", elapsed_time_handshake) < 0) {
-                fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error writing to file inference_time_outside_occlum_aes/no_aes.txt\n");
                 fclose(fd);
                 goto exit;
             }
             if (fprintf(fd, "Time to read request from client: %f ms\n", elapsed_time_read) < 0) {
-                fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error writing to file inference_time_outside_occlum_aes/no_aes.txt\n");
                 fclose(fd);
                 goto exit;
             }
             if (fprintf(fd, "Time to write response to client: %f ms\n", elapsed_time_write) < 0) {
-                fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error writing to file inference_time_outside_occlum_aes/no_aes.txt\n");
                 fclose(fd);
                 goto exit;
             }
             if (fprintf(fd, "Time to process the request: %f ms\n", elapsed_time_rest) < 0) {
-                fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error writing to file inference_time_outside_occlum_aes/no_aes.txt\n");
                 fclose(fd);
                 goto exit;
             }
             if (fprintf(fd, "Total time - server: %f ms\n", elapsed_time) < 0) {
-                fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_aes/no_aes.txt\n");
+                fprintf(stderr, "Error writing to file inference_time_outside_occlum_aes/no_aes.txt\n");
                 fclose(fd);
                 goto exit;
             }

@@ -1044,12 +1044,12 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
 
 #ifndef USE_DEBUG
     if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_no_aes.txt\n");
         fclose(fd);
         return NULL;
     }
     if (fprintf(fd, "Inference time to run a model: %f ms\n", sum) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_no_aes.txt\n");
         fclose(fd);
         return NULL;
     }
