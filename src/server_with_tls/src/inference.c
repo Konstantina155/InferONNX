@@ -496,14 +496,21 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
 
-        fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+        char *file_path = NULL;
+        #ifdef USE_FILE_CACHING
+            file_path = "../inference_time_outside_occlum_memory_only_no_aes.txt";
+        #else
+            file_path = "../inference_time_outside_occlum_on_disk_no_aes.txt";
+        #endif
+        fd = fopen(file_path, "a");
+
         if (!fd) {
-            fprintf(stderr, "Error opening inference_time!\n");
+            fprintf(stderr, "Error opening inference_time_outside_occlum_no_aes.txt!\n");
             return NULL;
         }
 #ifdef USE_SYS_TIME
         if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
-            fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+            fprintf(stderr, "Error writing to file inference_time_outside_occlum_no_aes.txt\n");
             fclose(fd);
             return NULL;
         }
@@ -524,9 +531,17 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         fprintf(stderr, "Current working directory: %s\n", cwd);
     }
-    fd = fopen("../inference_time_outside_occlum_on_disk_no_aes.txt", "a");
+
+    char *file_path = NULL;
+    #ifdef USE_FILE_CACHING
+        file_path = "../inference_time_outside_occlum_memory_only_no_aes.txt";
+    #else
+        file_path = "../inference_time_outside_occlum_on_disk_no_aes.txt";
+    #endif
+
+    fd = fopen(file_path, "a");
     if (!fd) {
-        fprintf(stderr, "Error opening inference_time_outside_occlum_on_disk_no_aes!\n");
+        fprintf(stderr, "Error opening inference_time_outside_occlum_no_aes!\n");
         return NULL;
     }
 
@@ -580,12 +595,12 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
 #ifdef USE_SYS_TIME
     if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_no_aes.txt\n");
         fclose(fd);
         return NULL;
     }
     if (fprintf(fd, "Inference time to run a model: %f ms\n", sum) < 0) {
-        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_no_aes.txt\n");
         fclose(fd);
         return NULL;
     }

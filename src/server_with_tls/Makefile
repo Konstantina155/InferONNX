@@ -4,11 +4,15 @@ USE_OCCLUM ?= 0
 USE_AES ?= 0
 USE_MEMORY_ONLY ?= 0
 USE_STRIP ?= 0
+USE_FILE_CACHING ?= 0
 
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
 LDFLAGS = -I./include -L ./lib -lmbedtls -lmbedx509 -lmbedcrypto
 
+ifeq ($(USE_FILE_CACHING), 1)
+	CFLAGS += -DUSE_FILE_CACHING
+endif
 ifeq ($(USE_STRIP), 1)
 	CFLAGS += -DUSE_STRIP
 endif

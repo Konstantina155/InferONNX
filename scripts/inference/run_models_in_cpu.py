@@ -13,8 +13,10 @@ def run_command_without_output(cmd, cwd=None):
     process.wait()
 
 def init_server_client():
-    run_command_without_output("make clean && make USE_AES=0 USE_OCCLUM=0 USE_SYS_TIME=1 server", cwd=f"{server_with_tls_path}/src")
-    run_command_without_output("make clean && make USE_AES=0 USE_OCCLUM=0 USE_SYS_TIME=0", cwd=server_with_tls_path)
+    use_file_cache = 0 if configuration == "tls_on_disk" else 1
+    build_flags = f"USE_AES=0 USE_OCCLUM=0 USE_FILE_CACHING={use_file_cache}"
+    run_command_without_output(f"make clean && make USE_SYS_TIME=1 {build_flags} server", cwd=f"{server_with_tls_path}/src")
+    run_command_without_output(f"make clean && make USE_SYS_TIME=0 {build_flags}", cwd=server_with_tls_path)
 
 def init(use_aes):
     use_sys_time_operators=0
