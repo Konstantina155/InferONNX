@@ -1,7 +1,7 @@
 #include <storage.h>
 
 //Hash table for storing the models
-// id -> model_names, key, IV, AAD, TractInferenceModels, MyInferenceModel (for llm's)
+// id -> model_names, key, IV, AAD, TractInferenceModels, TractLlmInferenceModel (for llm's)
 static unsigned int
 hash_function(const char* id)
 {
@@ -170,50 +170,45 @@ get_model(onnx_table *table, char *id)
 }
 
 void
-free_inference_model(TractInferenceModel *inference_model)
+free_inference_model_ptr(void *inference_model_ptr, ModelType model_type)
 {
-    assert(inference_model);
-#ifdef USE_AES
-    if (tract_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
-        fprintf(stderr, "Error releasing inference model\n");
-        return;
+    assert(inference_model_ptr);
+    switch (model_type) {
+        case MODEL_TYPE_CNN: {
+            TractInferenceModel *inference_model = (TractInferenceModel *)inference_model_ptr;
+            if (tract_cnn_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error releasing inference model\n");
+                return;
+            }
+            assert(!inference_model);
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr;
+            if (tract_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error releasing inference model\n");
+                return;
+            }
+            assert(!inference_model);
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type in free_inference_model()\n");
+            break;
     }
-#else
-    if (tract_cnn_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
-        fprintf(stderr, "Error releasing inference model\n");
-        return;
-    }
-#endif
-    
-    assert(!inference_model);
 }
 
-#ifdef USE_AES
 void
-free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length)
+free_inference_models_ptr(void **inference_models_ptr, int length, ModelType model_type)
 {
-    assert(inference_models);
+    assert(inference_models_ptr);
     for (int i = 0; i < (length + 1); ++i) {
-        if (inference_models[i]) {
-            free_inference_model(inference_models[i]);
+        if (inference_models_ptr[i]) {
+            free_inference_model_ptr(inference_models_ptr[i], model_type);
         }
     }
-    if (my_inference_models) free(my_inference_models);
-    free(inference_models);
+    free(inference_models_ptr);
 }
-#else
-void
-free_inference_models(TractInferenceModel **inference_models, int length)
-{
-    assert(inference_models);
-    for (int i = 0; i < (length + 1); ++i) {
-        if (inference_models[i]) {
-            free_inference_model(inference_models[i]);
-        }
-    }
-    free(inference_models);
-}
-#endif
 
 void
 free_input_indexes(int **input_indexes, int length)
@@ -238,17 +233,14 @@ deallocate_model(model *current)
         free(current->names[i]);
     }
     free(current->names);
-#ifdef USE_AES
-    if (current->inference_models || current->my_inference_models) free_inference_models(current->inference_models, current->my_inference_models, current->size + 1);
+    ModelType model_type;
+#if NUM_TOKENS == 0
+    model_type = MODEL_TYPE_CNN;
 #else
-    if (current->inference_models) free_inference_models(current->inference_models, current->size + 1);
+    model_type = MODEL_TYPE_LLM;
 #endif
-    char **visited_nodes = (char **) malloc((current->size + 1) * sizeof(char *));
-    int visited_count = 0;
-    free_operator_node(current->head, visited_nodes, &visited_count);
-    visited_nodes[current->size] = NULL;
-    free(visited_nodes);
-
+    if (current->inference_models_ptr) free_inference_models_ptr(current->inference_models_ptr, current->size + 1, model_type);
+    free_operator_node(current->head);
     free(current);
 }
 
@@ -329,18 +321,15 @@ print_models(model *m, int index)
         for (int i = 0; i < ADD_DATA_BYTES; i++) {
             fprintf(stderr, "%02x", current->AAD[i]);
         }
-        if (current->inference_models) {
+        if (current->inference_models_ptr) {
+#if NUM_TOKENS == 0
             fprintf(stderr, ",\n   TractInferenceModel: (not null)");
-        } else {
-            fprintf(stderr, ",\n   TractInferenceModel: (null)");
-        }
-#ifdef USE_AES
-        if (current->my_inference_models) {
-            fprintf(stderr, ",\n   MyInferenceModel: (not null)");
-        } else {
-            fprintf(stderr, ",\n   MyInferenceModel: (null)");
-        }
+#else
+            fprintf(stderr, ",\n   TractLlmInferenceModel: (not null)");
 #endif
+        } else {
+            fprintf(stderr, ",\n   InferenceModelPtr: (null)");
+        }
         if (current->head) {
             fprintf(stderr, ",\n   operator_node: (not null)");
         } else {
@@ -471,6 +460,7 @@ print_operator_io(operator_io **io)
 {
     assert(io);
 
+    fprintf(stderr, "\n");
     for (int i = 0; io[i] != NULL; i++) {
         fprintf(stderr, "Model input %d\n", i);
         if (io[i]->input_names) {
@@ -491,31 +481,14 @@ print_operator_io(operator_io **io)
 }
 
 // Doubled linked list to hold the model's structure
-bool 
-is_node_visited(operator_node *node, char **visited_nodes, int visited_count)
-{
-    assert(visited_nodes);
-    assert(visited_count > -1);
-    assert(node);
-
-    if(!node->model_name) {
-        return true;
-    }
-
-    for (int i = 0; i < visited_count; i++) {
-        if (strcmp(visited_nodes[i], node->model_name) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 operator_node *
-create_operator_node(char *model_name)
+create_operator_node(char *model_name, int node_id)
 {
     operator_node *node = (operator_node *)malloc(sizeof(operator_node));
     node->model_name = strdup(model_name);
     node->outputs = NULL;
+    node->shapefacts = NULL;
+    node->datum_types = NULL;
     node->num_inputs = -1;
     node->num_outputs = -1;
     node->num_children = 0;
@@ -523,8 +496,9 @@ create_operator_node(char *model_name)
     node->children = NULL;
     node->parents = NULL;
     node->parent_output_indices = NULL;
-    node->run_inference = NULL;
     node->elapsedTime = 0.0;
+    node->is_visited = false;
+    node->node_id = node_id;
     return node;
 }
 
@@ -630,42 +604,94 @@ update_node(operator_io **io, int id, operator_node *head)
 }
 
 void
-free_operator_node(operator_node *node, char **visited_nodes, int *visited_count)
+reset_node_visibility(operator_node *node)
 {
     if (!node) {
         return;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count)) {
+    node->is_visited = false;
+
+    for (int i = 0; i < node->num_children; i++) {
+        reset_node_visibility(node->children[i]);
+    }
+}
+
+void
+free_operator_node_info(operator_node *node)
+{
+    if (!node) {
         return;
     }
+
+    if (node->is_visited == true) {
+        return;
+    }
+
+    node->is_visited = true;
+
+    for (int i = 0; i < node->num_children; i++) {
+        free_operator_node_info(node->children[i]);
+    }
+
+    if (strcmp(node->model_name, "input") == 0) return;
+    if (node->outputs != NULL) {
+        for (int i = 0; node->outputs[i] != NULL; i++) {
+            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error destroying tract value for llm\n");
+                return;
+            }
+        }
+        free(node->outputs);
+        free(node->shapefacts);
+        free(node->datum_types);
+        node->outputs = NULL;
+        node->shapefacts = NULL;
+        node->datum_types = NULL;
+    }
+
+}
+
+void
+free_operator_node(operator_node *node)
+{
+    if (!node) {
+        return;
+    }
+
+    if (node->is_visited == true) {
+        return;
+    }
+
+    node->is_visited = true;
 
     if (node->parent_output_indices) {
         free(node->parent_output_indices);
     }
 
-    visited_nodes[*visited_count] = node->model_name;
-    (*visited_count)++;
-
     for (int i = 0; i < node->num_children; i++) {
-        free_operator_node(node->children[i], visited_nodes, visited_count);
+        free_operator_node(node->children[i]);
     }
 
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
-#ifdef USE_AES
-            if (tract_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+#if NUM_TOKENS == 0
+            if (tract_cnn_value_destroy((TractValue **)&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value\n");
                 return;
             }
 #else
-            if (tract_cnn_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value\n");
                 return;
-            }
+            }            
 #endif
         }
         free(node->outputs);
+        #if NUM_TOKENS != 0
+            free(node->shapefacts);
+            free(node->datum_types);
+        #endif
     }
 
     if (node->children) {
@@ -683,24 +709,25 @@ free_operator_node(operator_node *node, char **visited_nodes, int *visited_count
 }
 
 void
-print_operator_node(operator_node *node, char **visited_nodes, int *visited_count)
+print_operator_node(operator_node *node)
 {
     if (!node) {
         return;
     }
 
-    if (is_node_visited(node, visited_nodes, *visited_count) == false) {
-        visited_nodes[*visited_count] = node->model_name;
-        (*visited_count)++;
-
-        fprintf(stderr, "\nModel name: %s\n", node->model_name);
-        fprintf(stderr, "Number of inputs: %d\n", node->num_inputs);
-        fprintf(stderr, "Number of outputs: %d\n", node->num_outputs);
-        fprintf(stderr, "Number of children: %d\n", node->num_children);
-        fprintf(stderr, "Number of parents: %d\n\n", node->num_parents);
+    if (node->is_visited == true) {
+        return;
     }
 
+    node->is_visited = true;
+
+    fprintf(stderr, "\nModel name: %s\n", node->model_name);
+    fprintf(stderr, "Number of inputs: %d\n", node->num_inputs);
+    fprintf(stderr, "Number of outputs: %d\n", node->num_outputs);
+    fprintf(stderr, "Number of children: %d\n", node->num_children);
+    fprintf(stderr, "Number of parents: %d\n\n", node->num_parents);
+
     for (int i = 0; i < node->num_children; i++) {
-        print_operator_node(node->children[i], visited_nodes, visited_count);
+        print_operator_node(node->children[i]);
     }
 }
