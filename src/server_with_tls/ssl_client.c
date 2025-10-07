@@ -449,7 +449,7 @@ send_request(char *client_request, size_t request_len, int mode)
 #else
     cert_path = "../certificates/cert.pem";
 #endif
-    // cert_path = "certificates/cert.pem"; for the largest LLM
+    //cert_path = "certificates/cert.pem"; //when client in different machine
 
     ret = mbedtls_x509_crt_parse_file(&cacert, cert_path);
     if (ret != 0) {
@@ -506,7 +506,7 @@ send_request(char *client_request, size_t request_len, int mode)
         goto exit;
     }
 
-    // addition
+    //addition
 #if NUM_TOKENS > 0
     if (enable_keepalive(server_fd.fd) < 0) {
         fprintf(stderr, "Failed to enable keepalive on listening socket\n");

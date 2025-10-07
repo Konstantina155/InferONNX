@@ -161,11 +161,6 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
 enum TRACT_RESULT tract_onnx_model_for_path_llm(const char *model_path,
                                                 struct TractLlmInferenceModel **inference_model);
 
-enum TRACT_RESULT tract_onnx_model_for_path_llm_test(const char *model_path,
-                                                     struct TractLlmInferenceModel **inference_model,
-                                                     uintptr_t *num_inputs,
-                                                     char ***input_names);
-
 enum TRACT_RESULT tract_free_input_names(char **input_names, uintptr_t num_inputs);
 
 enum TRACT_RESULT tract_llm_inference_model_input_count(const struct TractLlmInferenceModel *model,
@@ -193,48 +188,45 @@ enum TRACT_RESULT tract_free_tokenizer(void **tokenizer_ptr);
 enum TRACT_RESULT tract_value_from_bytes_llm(void *tokenizer_ptr,
                                              const char *prompt,
                                              void **input_values,
-                                             void **input_shapes,
+                                             void **input_datum_types,
                                              uintptr_t num_inputs);
 
 enum TRACT_RESULT tract_llm_shape_destroy(void **value);
 
-enum TRACT_RESULT tract_free_llm_test(void **inputs, uintptr_t num_inputs);
+enum TRACT_RESULT tract_free_llm_inputs(void **inputs, uintptr_t num_inputs);
 
 enum TRACT_RESULT tract_llm_inference_model_release(struct TractLlmInferenceModel **model);
 
-enum TRACT_RESULT tract_run_llms(const char *model_path,
-                                 void *tokenizer_ptr,
-                                 char **inference,
-                                 void **inputs,
-                                 uintptr_t num_inputs,
-                                 void **outputs,
-                                 struct TractLlmInferenceModel **inference_model);
+enum TRACT_RESULT tract_inference_model_into_typed_llm_test(void **inputs,
+                                                            uintptr_t num_inputs,
+                                                            struct TractLlmInferenceModel **model,
+                                                            struct TractLlmTransformedModel **transformed_model);
 
-enum TRACT_RESULT tract_inference_model_into_typed_llm(void **inputs,
-                                                       uintptr_t num_inputs,
-                                                       void **input_shapes,
-                                                       struct TractLlmInferenceModel **model,
-                                                       struct TractLlmTransformedModel **transformed_model);
-
-enum TRACT_RESULT tract_inference_model_into_optimized_llm(void **inputs,
+enum TRACT_RESULT tract_inference_model_into_optimized_llm(void **_inputs,
                                                            uintptr_t num_inputs,
-                                                           void **input_shapes,
+                                                           void **input_shapefacts,
+                                                           void **input_datum_types,
                                                            struct TractLlmInferenceModel **model,
                                                            struct TractLlmTransformedModel **transformed_model);
 
-enum TRACT_RESULT tract_model_into_runnable_and_run_llm(void *tokenizer_ptr,
-                                                        void **inputs,
+enum TRACT_RESULT tract_model_into_runnable_and_run_llm(void **inputs,
                                                         uintptr_t num_inputs,
                                                         struct TractLlmTransformedModel **transformed_model,
-                                                        char **inference,
                                                         void **outputs,
-                                                        void **input_shapes);
+                                                        void **input_shapefacts,
+                                                        void **input_datum_types);
+
+enum TRACT_RESULT tract_generate_text_llm(void **inputs,
+                                          uintptr_t num_inputs,
+                                          void *tokenizer_ptr,
+                                          void **outputs,
+                                          uintptr_t num_outputs,
+                                          char **inference,
+                                          uintptr_t *next_token_id);
 
 enum TRACT_RESULT tract_update_input_values_llm(void **inputs,
                                                 uintptr_t num_inputs,
-                                                void *tokenizer_ptr,
-                                                void **outputs,
-                                                uintptr_t num_outputs);
+                                                uintptr_t next_token_id);
 
 enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           void *tokenizer_ptr,

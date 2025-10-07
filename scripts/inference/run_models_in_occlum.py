@@ -50,8 +50,9 @@ def extract_hex_numbers(text):
         print("No hex numbers found.")
     
 def client_side(partition_folder, unique_id):
-    if "cerebras-gpt" in path[unique_id] or "qwen" in path[unique_id] \
-        or "llama" in path[unique_id] or "mistral" in path[unique_id]:
+    if "gpt" in path[unique_id] or "qwen" in path[unique_id] \
+        or "llama" in path[unique_id] or "mistral" in path[unique_id] \
+        or "albert" in path[unique_id]:
         tme.sleep(200)
     else:
         tme.sleep(65)
@@ -61,7 +62,8 @@ def client_side(partition_folder, unique_id):
     path_ = f"{inferONNX_path}/models/{path[unique_id]}"
     input_file = f"{path_}test_data_set_0/input_0.pb"
     if "gpt" in path[unique_id] or "qwen" in path[unique_id] \
-        or "llama" in path[unique_id] or "mistral" in path[unique_id]:
+        or "llama" in path[unique_id] or "mistral" in path[unique_id] \
+        or "albert" in path[unique_id]:
         input_file = f"{path_}test_data_set_0/tokenizer.json"
 
     command = f"{server_with_tls_path}/ssl_client models {input_file} {path_}{partition_folder}"
@@ -77,19 +79,39 @@ def client_side(partition_folder, unique_id):
     run_command_without_output(command)
     close_connection()
 
-def extract_time(text):
+def extract_time(text, num_tokens):
+    if num_tokens == 0:
+        lines = text.splitlines()
+        start_model_index = next((i for i, line in enumerate(lines) if line.startswith("Model name:")), -1)
+        if start_model_index == -1:
+            raise ValueError("No 'Model name:' line found.")
+
+        lines_inference = lines[start_model_index:]
+        lines_inference = [line for line in lines_inference if not line.startswith("Model name:")]
+        end_model_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Write to client:")), len(lines_inference))
+        start_index = next((i + 1 for i, line in enumerate(lines_inference) if line.startswith("Response:")), len(lines_inference))
+        closing_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Closing the connection...")), len(lines_inference))
+
+        return "\n".join(lines_inference[:end_model_index] + lines_inference[start_index:closing_index])
+    
     lines = text.splitlines()
-    start_model_index = next((i for i, line in enumerate(lines) if line.startswith("Model name:")), -1)
-    if start_model_index == -1:
-        raise ValueError("No 'Model name:' line found.")
+    after_indices = [i for i, line in enumerate(lines) if "After onig_end" in line]
+    if not after_indices:
+        raise ValueError("No 'After onig_end' line found.")
 
-    lines_inference = lines[start_model_index:]
-    lines_inference = [line for line in lines_inference if not line.startswith("Model name:")]
-    end_model_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Write to client:")), len(lines_inference))
-    start_index = next((i + 1 for i, line in enumerate(lines_inference) if line.startswith("Response:")), len(lines_inference))
-    closing_index = next((i for i, line in enumerate(lines_inference) if line.startswith("Closing the connection...")), len(lines_inference))
+    end_idx = after_indices[-1]
+    start_idx = after_indices[-2] + 1 if len(after_indices) > 1 else 0
+    lines_inference = lines[start_idx:end_idx]
 
-    return "\n".join(lines_inference[:end_model_index] + lines_inference[start_index:closing_index])
+    filtered = [
+        line for line in lines_inference if any(key in line for key in ["Partition_", "Inference time"])
+    ]
+
+    lines_after_inference = lines[end_idx + 1:]
+    start_index = next((i + 1 for i, line in enumerate(lines_after_inference) if line.startswith("Response:")), len(lines_after_inference))
+    closing_index = next((i for i, line in enumerate(lines_after_inference) if line.startswith("Closing the connection...")), len(lines_after_inference))
+
+    return "\n".join(filtered + lines_after_inference[start_index:closing_index])
 
 def manage_connection():
     unique_id = 0
@@ -101,7 +123,8 @@ def manage_connection():
                 file.write("\nSGX\n----\n")
 
         num_tokens = 0
-        if "albert" in model_name or "gpt" in model_name:
+        if "albert" in model_name or "gpt" in model_name or \
+            "qwen" in model_name or "llama" in model_name or "mistral" in model_name:
             num_tokens = 10
 
         for i in range(num_runs):
@@ -129,7 +152,7 @@ def manage_connection():
             command = f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server"
             result = run_command_with_output(command, cwd=f"{path_to_occlum}/occlum_workspace")
             client.join()
-            inference_times = extract_time(result)
+            inference_times = extract_time(result, num_tokens)
             
             if configuration == "memory_only":
                 file_path = f"{server_with_tls_path}/inference_time_in_occlum_memory_only_aes.txt"
@@ -171,17 +194,19 @@ def main():
         "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
 
         #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
-        #"gpt2/", "albert-large-v2/"
+        #"gpt2/", "albert-large-v2/", "qwen2.5-0.5B/", #"small-mistral-0.7B/"
     ]
 
     global partition_folder, occlum_user_space
     partition_folder = entire_or_partition if "partitions" in entire_or_partition else ""
-    occlum_user_space = ["300MB", "300MB", "300MB", 
-                         "400MB", "700MB",
-                         "2GB", "2GB", "3GB",
+    occlum_user_space = [#"300MB", "300MB", "300MB", 
+                         #"400MB", "700MB",
+                         #"2GB", "2GB", "3GB",
 
                          #"400MB", "800MB", "2GB",
-                         #"5GB", "8GB", #"9GB", "14GB", "16GB" for llms
+                         #"5GB", "8GB", "14GB", "16GB" # for llms before new impl
+                         # load the model 10 times -> 
+                         # "9GB", "9GB", "15GB", None
                         ]
 
 

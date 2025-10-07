@@ -16,13 +16,9 @@ model *get_model(onnx_table *table, char *id);
 
 int remove_model_from_table(onnx_table *table, char *id);
 
-void free_inference_model(TractInferenceModel *inference_model);
+void free_inference_model_ptr(void *inference_model_ptr, ModelType type);
 
-#ifdef USE_AES
-    void free_inference_models(TractInferenceModel **inference_models, MyInferenceModel **my_inference_models, int length);
-#else
-    void free_inference_models(TractInferenceModel **inference_models, int length);
-#endif
+void free_inference_models_ptr(void **inference_models_ptr, int length, ModelType type);
 
 void deallocate_model(model *current);
 
@@ -36,13 +32,11 @@ void resize_operators_io(operator_io ***io, int length, int index);
 
 void insert_into_operator_io(operator_io ***io, operator_io *input, int index, char *name);
 
-int *find_index_of_operator_io(operator_io **io, int id);
-
 void free_operator_io(operator_io **io);
 
 void print_operator_io(operator_io **io);
 
-operator_node *create_operator_node(char *model_name);
+operator_node *create_operator_node(char *model_name, int node_id);
 
 void insert_parent_to_operator_node(operator_node *parent, operator_node *child);
 
@@ -50,10 +44,12 @@ void insert_child_to_operator_node(operator_node *parent, operator_node *child);
 
 void update_node(operator_io **io, int id, operator_node *head);
 
-bool is_node_visited(operator_node *node, char **visited_nodes, int visited_count);
-
 operator_node *search_operator_node_by_name(operator_node *node, const char *target_name);
 
-void free_operator_node(operator_node *node, char **visited_nodes, int *visited_count);
+void reset_node_visibility(operator_node *node);
 
-void print_operator_node(operator_node *node, char **visited_nodes, int *visited_count);
+void free_operator_node_info(operator_node *node);
+
+void free_operator_node(operator_node *node);
+
+void print_operator_node(operator_node *node);

@@ -518,12 +518,9 @@ free_request(request *req_original)
         }
         free(req_original->input);
     }
-    if (req_original->tokenizer != NULL) {
-        free(req_original->tokenizer);
-#ifdef USE_AES        
+#if NUM_TOKENS > 0        
         tract_free_onig();
 #endif
-    }
 }
 
 client_result *
@@ -602,8 +599,7 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->key, me->key, KEY_BYTES);
         memcpy(m->IV, me->IV, IV_BYTES);
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
-        m->inference_models = NULL;
-        m->my_inference_models = NULL;
+        m->inference_models_ptr = NULL;
         m->head = NULL;
   
         load_model_to_memory(&m, me->tags, num_models);
@@ -659,7 +655,7 @@ handle_request(char *client_request, onnx_table *table)
         memset(m->key, 0, KEY_BYTES);
         memset(m->IV, 0, IV_BYTES);
         memset(m->AAD, 0, ADD_DATA_BYTES);
-        m->inference_models = NULL;
+        m->inference_models_ptr = NULL;
         
         load_model_to_memory(&m);
 
@@ -751,12 +747,12 @@ handle_request(char *client_request, onnx_table *table)
 
 #ifdef USE_AES
     #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, tokenizer, tokenizer_size, m, tags, m->size);
+        result = inference_aes(input, num_inputs, &tokenizer, tokenizer_size, m, tags, m->size);
     #else
-        result = inference_memory_only(input, num_inputs, tokenizer, tokenizer_size, m);
+        result = inference_memory_only(input, num_inputs, &tokenizer, tokenizer_size, m);
     #endif
 #else
-        result = inference_no_aes(input, num_inputs, tokenizer, tokenizer_size, m);
+        result = inference_no_aes(input, num_inputs, &tokenizer, tokenizer_size, m);
 #endif
 
         if (!result) {
@@ -778,11 +774,7 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(c_l->result, result, size);
         c_l->size = size;
 
-        if (tokenizer) {
-            tract_free_cstring(result);
-        } else {
-            free(result);
-        }
+        free(result);
 
         break;
     }

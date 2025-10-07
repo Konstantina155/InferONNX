@@ -48,13 +48,15 @@ typedef enum TRACT_RESULT {
   TRACT_RESULT_KO = 1,
 } TRACT_RESULT;
 
-typedef struct MyInferenceModel MyInferenceModel;
-
 typedef struct TractFact TractFact;
 
 typedef struct TractInferenceFact TractInferenceFact;
 
 typedef struct TractInferenceModel TractInferenceModel;
+
+typedef struct TractLlmInferenceModel TractLlmInferenceModel;
+
+typedef struct TractLlmTransformedModel TractLlmTransformedModel;
 
 typedef struct TractModel TractModel;
 
@@ -158,24 +160,28 @@ enum TRACT_RESULT tract_nnef_write_model_to_dir(const struct TractNnef *nnef,
 
 void tract_free_onig(void);
 
-enum TRACT_RESULT tract_load_nlp_model(const char *model_path,
-                                       const EncryptionParameters *params,
-                                       const EncryptionParameters *params_weights,
-                                       struct MyInferenceModel **inference_model);
+enum TRACT_RESULT tract_onnx_model_for_path_llm(const char *model_path,
+                                                const EncryptionParameters *params,
+                                                const EncryptionParameters *params_weights,
+                                                struct TractLlmInferenceModel **inference_model);
 
-enum TRACT_RESULT tract_my_inference_model_input_count(const struct MyInferenceModel *model,
-                                                       uintptr_t *inputs);
+enum TRACT_RESULT tract_free_input_names(char **input_names, uintptr_t num_inputs);
 
-enum TRACT_RESULT tract_my_inference_model_output_count(const struct MyInferenceModel *model,
-                                                        uintptr_t *outputs);
+enum TRACT_RESULT tract_llm_inference_model_input_count(const struct TractLlmInferenceModel *model,
+                                                        uintptr_t *inputs);
 
-enum TRACT_RESULT tract_my_inference_model_input_name(const struct MyInferenceModel *model,
-                                                      uintptr_t input,
-                                                      char **name);
+enum TRACT_RESULT tract_llm_inference_model_output_count(const struct TractLlmInferenceModel *model,
+                                                         uintptr_t *outputs);
 
-enum TRACT_RESULT tract_my_inference_model_output_name(const struct MyInferenceModel *model,
-                                                       uintptr_t output,
-                                                       int8_t **name);
+enum TRACT_RESULT tract_llm_inference_model_input_name(const struct TractLlmInferenceModel *model,
+                                                       uintptr_t input,
+                                                       char **name);
+
+enum TRACT_RESULT tract_llm_inference_model_output_name(const struct TractLlmInferenceModel *model,
+                                                        uintptr_t output,
+                                                        int8_t **name);
+
+enum TRACT_RESULT tract_llm_value_destroy(void **value);
 
 enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
                                          uintptr_t tokenizer_buffer_size,
@@ -183,19 +189,60 @@ enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
 
 enum TRACT_RESULT tract_free_tokenizer(void **tokenizer_ptr);
 
-enum TRACT_RESULT tract_run_albert(const char *model_path,
-                                   void *tokenizer_ptr,
-                                   char **inference,
-                                   const EncryptionParameters *params,
-                                   struct MyInferenceModel **inference_model);
+enum TRACT_RESULT tract_value_from_bytes_llm(void *tokenizer_ptr,
+                                             const char *prompt,
+                                             void **input_values,
+                                             void **input_datum_types,
+                                             uintptr_t num_inputs);
 
-enum TRACT_RESULT tract_run_gpt2(const char *model_path,
-                                 void *tokenizer_ptr,
-                                 char **inference,
-                                 const EncryptionParameters *params,
-                                 uintptr_t num_tokens,
-                                 const char *prompt,
-                                 struct MyInferenceModel **inference_model);
+enum TRACT_RESULT tract_free_llm_inputs(void **input_values, uintptr_t num_inputs);
+
+enum TRACT_RESULT tract_llm_inference_model_release(struct TractLlmInferenceModel **model);
+
+enum TRACT_RESULT tract_inference_model_into_optimized_llm(uintptr_t num_inputs,
+                                                           void **input_shapefacts,
+                                                           void **input_datum_types,
+                                                           struct TractLlmInferenceModel **model,
+                                                           struct TractLlmTransformedModel **transformed_model);
+
+enum TRACT_RESULT tract_model_into_runnable_and_run_llm(void **inputs,
+                                                        uintptr_t num_inputs,
+                                                        struct TractLlmTransformedModel **transformed_model,
+                                                        void **outputs,
+                                                        void **input_shapefacts,
+                                                        void **input_datum_types);
+
+enum TRACT_RESULT tract_inference_model_into_optimized_and_run_llm(void **inputs,
+                                                                   uintptr_t num_inputs,
+                                                                   void **input_shapefacts,
+                                                                   void **input_datum_types,
+                                                                   struct TractLlmInferenceModel **model,
+                                                                   void **outputs,
+                                                                   void **output_shapefacts,
+                                                                   void **output_datum_types);
+
+enum TRACT_RESULT tract_model_for_path_into_optimized_and_run_llm(const char *model_path,
+                                                                  const EncryptionParameters *params,
+                                                                  const EncryptionParameters *params_weights,
+                                                                  void **inputs,
+                                                                  uintptr_t num_inputs,
+                                                                  void **input_shapefacts,
+                                                                  void **input_datum_types,
+                                                                  void **outputs,
+                                                                  void **output_shapefacts,
+                                                                  void **output_datum_types);
+
+enum TRACT_RESULT tract_generate_text_llm(void **inputs,
+                                          uintptr_t num_inputs,
+                                          void *tokenizer_ptr,
+                                          void **outputs,
+                                          uintptr_t num_outputs,
+                                          char **inference,
+                                          uintptr_t *next_token_id);
+
+enum TRACT_RESULT tract_update_input_values_llm(void **input_values,
+                                                uintptr_t num_inputs,
+                                                uintptr_t next_token_id);
 
 enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           void *tokenizer_ptr,
@@ -204,7 +251,21 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           const EncryptionParameters *params_weights,
                                           uintptr_t num_tokens,
                                           const char *prompt,
-                                          struct MyInferenceModel **inference_model);
+                                          struct TractLlmInferenceModel **inference_model);
+
+enum TRACT_RESULT tract_run_albert(const char *model_path,
+                                   void *tokenizer_ptr,
+                                   char **inference,
+                                   const EncryptionParameters *params,
+                                   struct TractLlmInferenceModel **inference_model);
+
+enum TRACT_RESULT tract_run_gpt2(const char *model_path,
+                                 void *tokenizer_ptr,
+                                 char **inference,
+                                 const EncryptionParameters *params,
+                                 uintptr_t num_tokens,
+                                 const char *prompt,
+                                 struct TractLlmInferenceModel **inference_model);
 
 /**
  * Creates an instance of an ONNX framework and parser that can be used to load models.
@@ -219,10 +280,15 @@ enum TRACT_RESULT tract_onnx_create(struct TractOnnx **onnx);
  */
 enum TRACT_RESULT tract_onnx_destroy(struct TractOnnx **onnx);
 
-enum TRACT_RESULT tract_onnx_model_for_path(const struct TractOnnx *onnx,
-                                            const char *path,
-                                            struct TractInferenceModel **model,
-                                            const EncryptionParameters *params);
+/**
+ * Parse and load an ONNX model as a tract InferenceModel.
+ * println!("cargo:rerun-if-changed=tract.h");
+ * `path` is a null-terminated utf-8 string pointer. It must point to a `.onnx` model file.
+ */
+enum TRACT_RESULT tract_onnx_model_for_path_cnn(const struct TractOnnx *onnx,
+                                                const char *path,
+                                                struct TractInferenceModel **model,
+                                                const EncryptionParameters *params);
 
 /**
  * Query an InferenceModel input counts.
@@ -315,7 +381,7 @@ enum TRACT_RESULT tract_inference_model_into_optimized(struct TractInferenceMode
 /**
  * Function to release the inference_model
  */
-enum TRACT_RESULT tract_inference_model_release(struct TractInferenceModel **model);
+enum TRACT_RESULT tract_cnn_inference_model_release(struct TractInferenceModel **model);
 
 /**
  * Transform a fully analysed InferenceModel to a TypedModel.
@@ -527,7 +593,7 @@ enum TRACT_RESULT tract_value_from_bytes(DatumType datum_type,
 /**
  * Destroy a value.
  */
-enum TRACT_RESULT tract_value_destroy(struct TractValue **value);
+enum TRACT_RESULT tract_cnn_value_destroy(struct TractValue **value);
 
 /**
  * Inspect part of a value. Except `value`, all argument pointers can be null if only some specific bits

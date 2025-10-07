@@ -62,13 +62,22 @@ typedef struct client_result
     unsigned char **tag;
 } client_result;
 
+typedef struct input_info {
+    void **input_values;
+    void **input_shapefacts;
+    void **input_datum_types;
+}input_info;
+
 typedef struct operator_node {
     #if USE_AES == 0 && USE_MEMORY_ONLY == 0 || USE_AES == 1 && USE_MEMORY_ONLY == 1
-        void (*run_inference)(struct operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
+        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
     #elif USE_AES == 1
-        void (*run_inference)(struct operator_node **node, TractValue **input_values, struct EncryptionParameters *params);
+        //testing -- added inference_model_ptr
+        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
     #endif
-    TractValue **outputs;
+    void **outputs;
+    void **shapefacts;
+    void **datum_types;
     char *model_name;
     int num_inputs;
     int num_outputs;
@@ -80,6 +89,8 @@ typedef struct operator_node {
     double pred;
     int category;
     double elapsedTime;
+    bool is_visited;
+    int node_id;
 }operator_node;
 
 typedef struct model
@@ -90,10 +101,7 @@ typedef struct model
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
-    TractInferenceModel **inference_models;
-#ifdef USE_AES    
-    MyInferenceModel **my_inference_models;
-#endif    
+    void **inference_models_ptr;   
     operator_node *head;
     struct model *next;
 } model;
@@ -112,3 +120,8 @@ typedef struct {
     int output_names_length;
     char **output_names;
 }operator_io;
+
+typedef enum {
+    MODEL_TYPE_CNN,
+    MODEL_TYPE_LLM
+} ModelType;

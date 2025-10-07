@@ -25,14 +25,17 @@
 #if USE_AES
     void load_model_to_memory(model **m, unsigned char **tags, int count_tags);
     #if USE_MEMORY_ONLY
-        void run_inference(operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
-        char *inference_memory_only(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m);
+        void run_inference_cnn(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+        void run_inference_llm(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+        char *inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m);
     #else
-        void run_inference(operator_node **node, TractValue **input_values, struct EncryptionParameters *params);
-        char *inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags);
+        void run_inference_cnn(operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
+        void run_inference_llm(operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
+        char *inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags);
     #endif
 #else
-    void run_inference(operator_node **node, TractValue **input_values, TractInferenceModel *inference_model);
-    char *inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_size, model *m);
     void load_model_to_memory(model **m);
+    void run_inference_cnn(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+    void run_inference_llm(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+    char *inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m);
 #endif
