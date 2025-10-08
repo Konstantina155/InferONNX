@@ -1,4 +1,4 @@
-# InferONNX
+# InferONNX: Practical and Privacy-Preserving Machine Learning Inference Using Trusted Execution Environments
 
 Lightweight system for privacy-preserving ML inference using Intel SGX and automatic model partitioning.
 
@@ -72,6 +72,6 @@ To remove intermediate files:
 
       python3 scripts/partitioning/clean_necesssary_files.py
 
-## Reproducing Paper Results
+## Reproducing paper results
 
 To generate all plots, tables, and benchmarks from the paper, see **[EXPERIMENTS.md](EXPERIMENTS.md)**.
