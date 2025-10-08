@@ -1160,6 +1160,7 @@ reset:
     elapsed_time_read = 0.0;
     elapsed_time_write = 0.0;
     elapsed_time_handshake = 0.0;
+    elapsed_time_rest = 0.0;
 #endif
 
     print_table(table);

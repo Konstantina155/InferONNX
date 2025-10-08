@@ -57,7 +57,7 @@ def client_side(partition_folder, unique_id):
     path_ = f"{inferONNX_path}/models/{path[unique_id]}"
     
 
-    command = f"{server_with_tls_path}/ssl_client models {path_}test_data_set_0/input_0.pb {path_}{partition_folder}"
+    command = f"{server_with_tls_path}/./ssl_client models {path_}test_data_set_0/input_0.pb {path_}{partition_folder}"
     result = run_command_with_output(command)
 
     if "on_disk" in configuration:
@@ -66,7 +66,7 @@ def client_side(partition_folder, unique_id):
     else:
         tag_file = ""
 
-    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {path_}test_data_set_0/input_0.pb"
+    command = f"{server_with_tls_path}/./ssl_client inputs 1 {tag_file} {path_}test_data_set_0/input_0.pb"
     run_command_without_output(command)
     close_connection()
 
@@ -91,7 +91,7 @@ def manage_connection():
 
         if configuration == "memory_only_operators":
             with open(f"{inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt", 'a') as file:
-                file.write("\nSGX\n----\n")
+                file.write("\nSGX\n----\n\n")
 
         for i in range(num_runs):
             if configuration == "on_disk":
@@ -133,12 +133,32 @@ def manage_connection():
         unique_id += 1
 
 def close_connection():
-    output = subprocess.Popen([f"{server_with_tls_path}/ssl_client quit"], stdout=subprocess.PIPE, shell=True)
+    output = subprocess.Popen([f"{server_with_tls_path}/./ssl_client quit"], stdout=subprocess.PIPE, shell=True)
     output.wait()
 
+def check_and_create_dir(directory):
+    os.makedirs(directory, exist_ok=True)
+
+def init_occlum_cert():
+    os.system("occlum init")
+    check_and_create_dir("image/bin/encrypted_models")
+    if not os.listdir('../certificates/'):
+        os.system(f"openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout ../certificates/key.pem \
+            -out ../certificates/cert.pem \
+            -days 365 \
+            -subj \"/C=US/ST=CA/L=SanFrancisco/O=MyCompany/CN=localhost\"")
+
+    os.system(f"cp ../certificates/* image/bin")
+
+def create_tag_file(file_path):
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as f:
+            f.write("")
+
 def main():
-    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-        print("Usage: python3 run_models_in_occlum.py <memory_only/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_runs> <path_to_inferONNX>")
+    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or ("memory_only" in sys.argv[1] and sys.argv[2] == "partitions"):
+        print("Usage: python3 run_models_in_occlum.py <memory_only/memory_only_operators/on_disk/on_disk_caching> <entire/partitions - only for disk> <number_of_runs> <path_to_inferONNX>")
         exit(1)
 
     global configuration, entire_or_partition, num_runs, inferONNX_path
@@ -149,6 +169,13 @@ def main():
 
     if inferONNX_path == "./":
         inferONNX_path = os.getcwd()
+
+    check_and_create_dir(f"{inferONNX_path}/memory_intensive_ops/")
+    check_and_create_dir('../occlum_workspace')
+    check_and_create_dir('../certificates')
+    os.chdir("../occlum_workspace/")
+    if not os.listdir('./'):
+        init_occlum_cert()
 
     global path_to_occlum, server_with_tls_path, tag_file_path
     path_to_occlum = os.path.join(inferONNX_path, "..")
@@ -176,6 +203,8 @@ def main():
     manage_connection()
     run_command_without_output("make clean", cwd=server_with_tls_path)
     run_command_without_output("make clean", cwd=f"{server_with_tls_path}/src")
+
+    os.chdir(inferONNX_path)
 
 
 if __name__ == "__main__":

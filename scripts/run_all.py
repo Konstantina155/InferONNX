@@ -27,7 +27,7 @@ def run_command(command):
 def run_all_and_create_plot(path_to_scripts, number_of_runs, partitions_folder, inferONNX_path):
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching entire {number_of_runs} {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk entire {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk {partitions_folder} {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {partitions_folder} {number_of_runs} {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire {number_of_runs} {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_on_disk {number_of_runs} {inferONNX_path}")

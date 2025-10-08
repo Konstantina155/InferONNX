@@ -602,25 +602,13 @@ send_request(char *client_request, size_t request_len, int mode)
         char *file_path = NULL;
     #ifdef USE_OCCLUM
         #if USE_MEMORY_ONLY == 1
-            #if USE_STRIP == 1
-                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt";
-            #else
-                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt";
-            #endif
+            file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt";
         #else
             #if USE_AES == 1
-                #if USE_STRIP == 1
-                    #ifdef USE_FILE_CACHING
-                        file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped_file_caching.txt";
-                    #else
-                        file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt";
-                    #endif
-                #else   
-                    #ifdef USE_FILE_CACHING
-                        file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt";
-                    #else
-                        file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt";
-                    #endif
+                #ifdef USE_FILE_CACHING
+                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt";
+                #else
+                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt";
                 #endif
             #else
                 #ifdef USE_FILE_CACHING
@@ -837,29 +825,17 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     char *buffer = serialize_client_request(&req_original, bufLen);
     buffer[bufLen] = '\0';
 
-        FILE *fd = NULL;
-        char *file_path = NULL;
+    char *file_path = NULL;
+
 #ifdef USE_OCCLUM
     #if USE_MEMORY_ONLY == 1
-        #if USE_STRIP == 1
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
-        #else
-            fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
-        #endif
+        file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt";
     #else
         #if USE_AES == 1
-            #if USE_STRIP == 1
-                #ifdef USE_FILE_CACHING
-                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped_file_caching.txt";
-                #else
-                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_stripped.txt";
-                #endif
+            #ifdef USE_FILE_CACHING
+                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt";
             #else
-                #ifdef USE_FILE_CACHING
-                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes_file_caching.txt";
-                #else
-                    file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt";
-                #endif
+                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_on_disk_aes.txt";
             #endif
         #else
             #ifdef USE_FILE_CACHING
@@ -885,7 +861,8 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         #endif
     #endif
 #endif
-    fd = fopen(file_path, "a");
+
+    FILE *fd = fopen(file_path, "a");
     if (!fd) {
         fprintf(stderr, "Error opening inference_time!\n");
         return;
