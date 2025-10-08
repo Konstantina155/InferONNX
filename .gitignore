@@ -4,3 +4,5 @@ src/server_with_tls/inference_time_*
 src/server_without_tls/inference_time_*
 scripts/benchmarks/memory_requirements_*
 src/server_with_tls/scripts/standalone_inference
+models/albert-large-v2/
+models/qwen2.5-0.5B/
