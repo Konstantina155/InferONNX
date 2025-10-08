@@ -599,14 +599,13 @@ send_request(char *client_request, size_t request_len, int mode)
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;
 
     if (mode == 1) {
-        FILE *fd = NULL;
         char *file_path = NULL;
     #ifdef USE_OCCLUM
         #if USE_MEMORY_ONLY == 1
             #if USE_STRIP == 1
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt", "a");
+                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes_stripped.txt";
             #else
-                fd = fopen("../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt", "a");
+                file_path = "../InferONNX/src/server_with_tls/inference_time_in_occlum_memory_only_aes.txt";
             #endif
         #else
             #if USE_AES == 1
@@ -647,6 +646,7 @@ send_request(char *client_request, size_t request_len, int mode)
         #endif
     #endif
 
+    FILE *fd = fopen(file_path, "a");
     if (!fd) {
         fprintf(stderr, "Error opening inference_time!\n");
         return;

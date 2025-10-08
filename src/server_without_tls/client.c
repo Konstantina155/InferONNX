@@ -452,7 +452,7 @@ send_request(char *client_request, ssize_t request_len, int mode)
         fclose(fd);
     }
 
-    fprintf(stdout, " %ld bytes \nMessage from server: %s\n Connection was closed gracefully\n", bytes_read, input);
+    fprintf(stderr, " %ld bytes \nMessage from server: %s\n Connection was closed gracefully\n", bytes_read, input);
 
     close(client_fd);
 }
@@ -889,7 +889,7 @@ main(int argc, char *argv[])
         }
         int id = (int)num_model;
 
-#if USE_AES == 1 && USE_MEMORY_ONLY == 0     
+#if USE_AES == 1
         if (argc < 5) {
             fprintf(stderr, "Usage: %s 'inputs' <model_id> <tag_file> <model_input#1> ... <model_input#N>\n", argv[0]);
             return -1;

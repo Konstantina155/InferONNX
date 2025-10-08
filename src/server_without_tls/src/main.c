@@ -669,6 +669,22 @@ handle_request(char *client_request, onnx_table *table)
         }
         free(tags);
 
+        c_l->tag = (unsigned char **) malloc((num_models + 1)* sizeof(unsigned char *));
+        for (int i = 0; i < num_models; ++i) {
+            c_l->tag[i] = (unsigned char *) malloc(TAG_BYTES * sizeof(unsigned char));
+            if (!c_l->tag[i]) {
+                fprintf(stderr, "Memory allocation failed for c_l->tag in MODEL\n");
+                free_request(&req_copy);
+                free(client_request);
+                free_encrypted_models_info(me, num_models);
+                free(c_l->result);
+                return NULL;
+            }
+            memset(c_l->tag[i], 0, TAG_BYTES);
+            memcpy(c_l->tag[i], me->tag[i], TAG_BYTES);        
+        }
+        c_l->tag[num_models] = NULL;
+
         char *id_str = insert_into_table(table, m);
         if (!id_str) {
             free_encrypted_models_info(me, num_models);
@@ -744,7 +760,7 @@ handle_request(char *client_request, onnx_table *table)
             return NULL;
         }
 
-        #if (USE_AES == 1 && USE_MEMORY_ONLY == 1) || USE_AES == 0
+        #if (USE_AES == 1 && USE_MEMORY_ONLY == 0) || USE_AES == 0
         if (tags) {
             fprintf(stderr, "Invalid request for MODEL_INPUT for tags for memory-only\n");
             free_request(&req_copy);
@@ -1018,7 +1034,7 @@ main()
         fprintf(stderr, "Bytes written: %ld\nResponse: %s\n", bytes_send, response);
 
         if (strstr(response, "Inference:") != NULL) {
-FILE *fd = NULL;
+            FILE *fd = NULL;
 #ifdef USE_AES
             fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
 #else     

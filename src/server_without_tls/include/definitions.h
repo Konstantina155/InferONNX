@@ -88,6 +88,7 @@ typedef struct model
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
+    TractInferenceModel **inference_models;
     operator_node *head;
     struct model *next;
 } model;

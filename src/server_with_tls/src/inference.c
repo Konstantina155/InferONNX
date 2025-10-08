@@ -524,14 +524,6 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     int model_count = get_array_size((void **)m->names);
     fprintf(stderr, "Model count: %d\n", model_count);
 
-    #include <unistd.h>
-    #include <limits.h>
-
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        fprintf(stderr, "Current working directory: %s\n", cwd);
-    }
-
     char *file_path = NULL;
     #ifdef USE_FILE_CACHING
         file_path = "../inference_time_outside_occlum_memory_only_no_aes.txt";

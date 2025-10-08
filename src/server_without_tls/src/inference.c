@@ -347,7 +347,7 @@ run_inference(operator_node **node, TractValue **input_values, struct Encryption
 }
 
 double
-execute_tree(operator_node *node, TractValue **input_values, double elapsed_time, char **visited_nodes, int *visited_count, unsigned char **tags, struct EncryptionParameters *params)
+execute_tree(operator_node *node, TractValue **input_values, double elapsed_time, char **visited_nodes, int *visited_count, unsigned char **tags, struct EncryptionParameters *params, FILE *fd)
 {
     if (!node) {
         return elapsed_time;
@@ -364,10 +364,14 @@ execute_tree(operator_node *node, TractValue **input_values, double elapsed_time
             assert(tag);
             memcpy(tag, tags[i], TAG_BYTES * 2);
             params->tag = tag;
+            fprintf(stderr, "Model name: %s\n", node->model_name);
 
             node->run_inference(&node, input_values, params);
-            fprintf(stderr, "Model name: %s\n", node->model_name);
-            fprintf(stderr, "Partition_%d: %f ms\n", i, node->elapsedTime);
+            if (fd) {
+                fprintf(fd, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
+            } else {
+                fprintf(stderr, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
+            }
             free(tag);
 
             if (!node->outputs) {
@@ -379,7 +383,7 @@ execute_tree(operator_node *node, TractValue **input_values, double elapsed_time
     }
 
     for (int i = 0; i < node->num_children; i++) {
-        elapsed_time = execute_tree(node->children[i], input_values, elapsed_time, visited_nodes, visited_count, tags, params);
+        elapsed_time = execute_tree(node->children[i], input_values, elapsed_time, visited_nodes, visited_count, tags, params, fd);
     }
     return elapsed_time;
 }
@@ -430,7 +434,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         return NULL;
     }
 
-    FILE *fd = fopen("../InferONNX/src/server_without_tls/inference_time_cpu_memory_only_aes.txt", "a");
+    FILE *fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
     if (!fd) {
         fprintf(stderr, "\nError opening inference_time_cpu_memory_only_aes!\n");
         return NULL;
@@ -465,7 +469,8 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
         elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
         elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
 
-        fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
+        fprintf(fd, "Inference time: %f ms\n", elapsed_time);
+        fclose(fd);
         
         free(tag);
         free(key);
@@ -539,7 +544,7 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
 
     char **visited_nodes = (char **) malloc((model_count + 1) * sizeof(char *));
     int visited_count = 0;
-    double sum = execute_tree(m->head, input_values, 0.0, visited_nodes, &visited_count, tags, params);
+    double sum = execute_tree(m->head, input_values, 0.0, visited_nodes, &visited_count, tags, params, fd);
     visited_nodes[model_count] = NULL;
     free(visited_nodes);
 
@@ -563,8 +568,17 @@ inference_aes(float **images, int num_images, uint8_t *tokenizer, int tokenizer_
     elapsed_time = (t2_inf.tv_sec - t1_inf.tv_sec) * 1000.0;      // sec to ms
     elapsed_time += (t2_inf.tv_usec - t1_inf.tv_usec) / 1000.0;   // us to ms
 
-    fprintf(stderr, "Inference time: %f ms\n", elapsed_time);
-    fprintf(stderr, "Inference time to run a model: %f ms\n", sum);
+    if (fprintf(fd, "Inference time: %f ms\n", elapsed_time) < 0) {
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fclose(fd);
+        return NULL;
+    }
+    if (fprintf(fd, "Inference time to run a model: %f ms\n", sum) < 0) {
+        fprintf(stderr, "Error writing to file inference_time_outside_occlum_on_disk_no_aes.txt\n");
+        fclose(fd);
+        return NULL;
+    }
+    fclose(fd);
 
     operator_node *last_node = search_operator_node_by_name(m->head, m->names[model_count-1]);
     char *prediction = (char *) malloc(512 * sizeof(char));
@@ -786,11 +800,10 @@ execute_tree(operator_node *node, TractValue **input_values, double elapsed_time
 
         if (*visited_count != 1) {
             fprintf(stderr, "Model name: %s\n", node->model_name);
+            node->run_inference(&node, input_values);
             if (fd) {
-                node->run_inference(&node, input_values);
                 fprintf(fd, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
             } else {
-                node->run_inference(&node, input_values);
                 fprintf(stderr, "Partition_%d: %f ms\n", (*visited_count) - 1, node->elapsedTime);
             }
         
@@ -862,7 +875,7 @@ inference_no_aes(float **images, int num_images, uint8_t *tokenizer, int tokeniz
     fprintf(stderr, "Model count: %d\n", model_count);
 
 #ifdef USE_AES
-    fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
+        fd = fopen("../inference_time_cpu_memory_only_aes.txt", "a");
 #else     
     #ifdef USE_MEMORY_ONLY
         fd = fopen("../inference_time_cpu_memory_only_no_aes.txt", "a");
