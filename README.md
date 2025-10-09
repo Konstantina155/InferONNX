@@ -1,6 +1,6 @@
 # InferONNX: Practical and Privacy-Preserving Machine Learning Inference Using Trusted Execution Environments
 
-Lightweight system for privacy-preserving ML inference using Intel SGX and automatic model partitioning.
+Lightweight system for privacy-preserving ML inference using Intel SGX and automated model partitioning.
 
 📖 **[Read the full paper](https://doi.org/10.1007/978-3-031-97623-0_2)**
 
@@ -34,7 +34,7 @@ python3 scripts/inference/run_models_in_cpu.py tls_memory_only 3 ./
 
 ## Automated Model Partitioning
 
-The partitions in `models/*/partitions/` were generated using the automatic model partitioning process described below. To generate partitions from scratch:
+The partitions in `models/*/partitions/` were generated using the automated model partitioning process described below. To generate partitions from scratch:
 
 ### Partitioning from Scratch
 
