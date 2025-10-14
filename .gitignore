@@ -12,3 +12,4 @@ src/*/client
 scripts/benchmarks/memory_requirements_detailed*
 models/albert-large-v2/
 models/qwen2.5-0.5B/
+models/teeny-tiny-llama-460M/

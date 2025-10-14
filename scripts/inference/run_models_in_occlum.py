@@ -12,7 +12,7 @@ def run_command(cmd, cwd=None):
 def run_command_with_output(cmd, cwd=None):
     output = subprocess.Popen(cmd, cwd=cwd, stderr=subprocess.PIPE, shell=True)
     _, result_stderr = output.communicate()
-    return result_stderr.decode('utf-8')
+    return result_stderr.decode('utf-8', errors='replace')
 
 def run_command_without_output(cmd, cwd=None):
     process = subprocess.Popen(cmd, cwd=cwd, shell=True)
@@ -193,8 +193,8 @@ def main():
         "efficientnet-lite4-11/", "inception-v3-12/", 
         "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
 
-        #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
-        #"gpt2/", "albert-large-v2/", "qwen2.5-0.5B/", #"small-mistral-0.7B/"
+        "resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
+        "gpt2/", "albert-large-v2/", "teeny-tiny-llama-460M/", "qwen2.5-0.5B/"
     ]
 
     global partition_folder, occlum_user_space
@@ -204,9 +204,9 @@ def main():
                          #"2GB", "2GB", "3GB",
 
                          #"400MB", "800MB", "2GB",
-                         #"5GB", "8GB", "14GB", "16GB" # for llms before new impl
+                         #"5GBs", "8GB", "14GB", "16GB" # for llms before new impl
                          # load the model 10 times -> 
-                         # "9GB", "9GB", "15GB", None
+                         # "9GB", "9GB", "13GB", "15GB", #None
                         ]
 
 
