@@ -9,11 +9,12 @@ Lightweight system for privacy-preserving ML inference using Intel SGX and autom
 <details>
 <summary><b>📋 Prerequisites</b></summary>
 
+* Operating System: Ubuntu 20.04
 * Intel SGX SDK and PSW: [Documentation](https://download.01.org/intel-sgx/latest/dcap-latest/linux/docs/Intel_SGX_SW_Installation_Guide_for_Linux.pdf)
-* Ubuntu 20.04
 * Occlum: [GitHub Repository](https://github.com/occlum/occlum)
-* Python 3.8+
-* Python packages (see `requirements.txt`)
+* Python: Version 3.8 or higher
+* Python dependencies: See [`requirements.txt`](./requirements.txt)  
+* Git LFS: Run `git lfs install` to enable downloading large files locally
 
 </details>
 
