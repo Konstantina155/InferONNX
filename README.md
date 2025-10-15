@@ -14,7 +14,12 @@ Lightweight system for privacy-preserving ML inference using Intel SGX and autom
 * Occlum: [GitHub Repository](https://github.com/occlum/occlum)
 * Python: Version 3.8 or higher
 * Python dependencies: See [`requirements.txt`](./requirements.txt)  
-* Git LFS: Run `git lfs install` to enable downloading large files locally
+* Git LFS: Run these commands to enable downloading large files locally \
+  ```bash
+  sudo apt install git-lfs
+  git lfs install
+  git lfs pull
+  ```
 
 </details>
 
