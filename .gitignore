@@ -6,3 +6,9 @@ scripts/benchmarks/memory_requirements_*
 src/server_with_tls/scripts/standalone_inference
 models/albert-large-v2/
 models/qwen2.5-0.5B/
+models/teeny-tiny-llama-460M/
+src/server_with_tls/src/*.o
+src/server_with_tls/*.o
+src/server_with_tls/src/occlum_server
+src/server_with_tls/src/server
+src/server_with_tls/ssl_client
