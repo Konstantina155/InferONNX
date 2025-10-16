@@ -1,0 +1,1 @@
+Download the entire model with [`download_large_models.sh`](../../download_large_models.sh).
