@@ -162,6 +162,7 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
 static void *
 onnx_model_for_path(char *model_name, void **inference_model_ptr, ModelType model_type, struct EncryptionParameters *params, struct EncryptionParameters *params_weights)
 {  
+    fprintf(stderr, "Loading model: %s", model_name);
     switch (model_type) {
         case MODEL_TYPE_CNN: {
             assert(!params_weights);
@@ -344,7 +345,8 @@ load_model_to_memory(model **m, unsigned char **tags, int count_tags)
                     if (strstr(model_path, "albert") != NULL ||
                         strstr(model_path, "gpt") != NULL ||
                         strstr(model_path, "pythia") != NULL ||
-                        strstr(model_path, "teeny") != NULL
+                        strstr(model_path, "llama") != NULL ||
+                        strstr(model_path, "mistral") != NULL
                     ) params_weights->tag = tag;
 
                     inference_models_ptr[i] = onnx_model_for_path(model_path, &inference_models_ptr[i], model_type, params, params_weights);
@@ -506,11 +508,6 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
             input_names_llm[number_inputs_llm] = NULL;
             o_io_first.output_names_length = number_inputs_llm;
             o_io_first.output_names = input_names_llm;
-
-            for (int i = 0; i < number_inputs_llm; ++i) {
-                free(input_names_llm[i]);
-            }
-            free(input_names_llm);
         #else
             o_io_first.output_names_length = num_inputs;
             o_io_first.output_names = input_names;
@@ -518,6 +515,13 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
 
         insert_into_operator_io(&io, &o_io_first, index - 1, "input");
         update_node(io, index - 1, NULL);
+
+        #if NUM_TOKENS != 0
+            for (int i = 0; i < number_inputs_llm; i++) {
+                free(input_names_llm[i]);
+            }
+            free(input_names_llm);
+        #endif
     }
 
     operator_io o_io;
@@ -971,7 +975,11 @@ execute_tree(operator_node *node, input_info *input_info_ptr, double *elapsed_ti
         node->run_inference(&node, input_info_ptr, inference_models_ptr[node->node_id - 1]);
     #endif
     #ifdef USE_SYS_TIME
-        fprintf(fd, "Partition_%d: %f ms\n", node->node_id - 1, node->elapsedTime);
+        if (fd) {
+            fprintf(fd, "Partition_%d: %f ms\n", node->node_id - 1, node->elapsedTime);
+        } else {
+            fprintf(stderr, "Partition_%d: %f ms\n", node->node_id - 1, node->elapsedTime);
+        }
     #endif
 #else
     if (fd) {
@@ -1048,13 +1056,7 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
 
-        char *prompt = NULL;
-        if (strstr(m->names[0], "albert") != NULL) {
-            prompt = "Paris is the [MASK] of France.";
-        } else {
-            prompt = "Hi, how are you today?";
-        }
-
+        char *prompt = "Hi, how are you today?";
         check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
@@ -1248,13 +1250,7 @@ inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int t
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
 
-        char *prompt = NULL;
-        if (strstr(m->names[0], "albert") != NULL) {
-            prompt = "Paris is the [MASK] of France.";
-        } else {
-            prompt = "Hi, how are you today?";
-        }
-
+        char *prompt = "Hi, how are you today?";
         check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
@@ -1514,10 +1510,20 @@ run_inference_llm(operator_node **node, input_info *input_info_ptr, struct Encry
     //TractLlmTransformedModel *transformed_model = NULL;
     int num_inputs_ptr = get_array_size(input_info_ptr->input_values);
 
-    // // Load the model
+// #ifdef USE_SYS_TIME
+//     gettimeofday(&t1_load, NULL);
+// #endif
+    // Load the model
     // TractLlmInferenceModel *inference_model = NULL;
     // check(tract_onnx_model_for_path_llm((*node)->model_name, params, params_weights, &inference_model));
     // assert(inference_model);
+// #ifdef USE_SYS_TIME
+//     gettimeofday(&t2_load, NULL);
+//     elapsed_time = (t2_load.tv_sec - t1_load.tv_sec) * 1000.0;      // sec to ms
+//     elapsed_time += (t2_load.tv_usec - t1_load.tv_usec) / 1000.0;   // us to ms
+//     fprintf(stderr, "Inference time to load the model/partition: %f ms\n", elapsed_time);
+//     elapsed_time = 0.0;
+// #endif
 
     int num_outputs = (*node)->num_outputs;
     void **outputs = malloc((num_outputs + 1) * sizeof(void *));
@@ -1575,7 +1581,7 @@ run_inference_llm(operator_node **node, input_info *input_info_ptr, struct Encry
 
     // check(tract_model_into_runnable_and_run_llm(inputs, k, &transformed_model, outputs, shapefacts, datum_types));
 
-    //tract_inference_model_into_optimized_and_run_llm(inputs, k, input_shapefacts, input_datum_types, &inference_model, outputs, output_shapefacts, output_datum_types);
+    //check(tract_inference_model_into_optimized_and_run_llm(inputs, k, input_shapefacts, input_datum_types, &inference_model, outputs, output_shapefacts, output_datum_types));
     check(tract_model_for_path_into_optimized_and_run_llm((*node)->model_name, params, params_weights, inputs, k, input_shapefacts, input_datum_types, outputs, output_shapefacts, output_datum_types));
     free(inputs);
     free(input_shapefacts);
@@ -1645,7 +1651,8 @@ execute_tree(operator_node *node, input_info *input_info_ptr, double *elapsed_ti
         if (strstr(node->model_name, "albert") != NULL || 
             strstr(node->model_name, "gpt") != NULL ||
             strstr(node->model_name, "pythia") != NULL || 
-            strstr(node->model_name, "teeny") != NULL) params_weights->tag = tag;
+            strstr(node->model_name, "llama") != NULL ||
+            strstr(node->model_name, "mistral") != NULL) params_weights->tag = tag;
         fprintf(stderr, "PARAMS_WEIGHTS tag: %s\n", params_weights->tag);
 #endif
         
@@ -1707,68 +1714,6 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
         return NULL;
     }
 
-    int number_inputs_llm = 3;
-
-    if (!images && tokenizer_size > 0) {
-        check_ret(tract_create_tokenizer(*tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
-        free(*tokenizer);
-
-        if ((model_count == 1 && strstr(m->names[0], "gpt2") != NULL) || 
-            (model_count == 2 && strstr(m->names[1], "gpt2") != NULL)) {
-            number_inputs_llm = 2;
-        }
-
-        input_info_ptr->input_values = malloc((number_inputs_llm + 1) * sizeof(void *));
-        input_info_ptr->input_shapefacts = malloc((number_inputs_llm + 1) * sizeof(void *));
-        input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
-        memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
-
-        char *prompt = NULL;
-        if (strstr(m->names[0], "albert") != NULL) {
-            prompt = "Paris is the [MASK] of France.";
-        } else {
-            prompt = "Hi, how are you today?";
-        }
-
-        check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
-        input_info_ptr->input_values[number_inputs_llm] = NULL;
-        input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
-    } else {
-        assert(images);
-
-        input_info_ptr->input_values = malloc((num_images + 1) * sizeof(void *));
-
-        int size, flag;
-        for (int i = 0; i < num_images; i++) {
-            size_t shape[4] = {(int)images[i][0], (int)images[i][1], (int)images[i][2], (int)images[i][3]};
-
-            fprintf(stderr, "Image shape[%d]: %zu, %zu, %zu, %zu\n", i, shape[0], shape[1], shape[2], shape[3]);
-
-            flag = 0;
-            size = 1;
-            for (int j = 0; j < 4; j++) {
-                if (shape[j] != 0) {
-                    flag++;
-                    size *= shape[j];
-                }
-            }
-
-            float *temp_image = (float *) malloc(size * sizeof(float));
-            if (!temp_image) {
-                fprintf(stderr, "Error allocating memory for temp_image\n");
-                return NULL;
-            }
-            memcpy(temp_image, images[i] + flag, size * sizeof(float));
-
-            TractValue *input_value = NULL;
-            check_ret(tract_value_from_bytes(TRACT_DATUM_TYPE_F32, flag, shape, temp_image, &input_value), NULL);
-            free(temp_image);
-
-            input_info_ptr->input_values[i] = input_value;
-        }
-        input_info_ptr->input_values[num_images] = NULL;
-    }
-
     EncryptionParameters *params = (EncryptionParameters *)malloc(sizeof(EncryptionParameters));
     if (!params) {
         fprintf(stderr, "Memory allocation for params failed\n");
@@ -1819,6 +1764,62 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
             return NULL;
         }
     #endif
+
+    int number_inputs_llm = 3;
+    if (!images && tokenizer_size > 0) {
+        check_ret(tract_create_tokenizer(*tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
+        free(*tokenizer);
+
+        if ((model_count == 1 && strstr(m->names[0], "gpt2") != NULL) || 
+            (model_count == 2 && strstr(m->names[1], "gpt2") != NULL)) {
+            number_inputs_llm = 2;
+        }
+
+        input_info_ptr->input_values = malloc((number_inputs_llm + 1) * sizeof(void *));
+        input_info_ptr->input_shapefacts = malloc((number_inputs_llm + 1) * sizeof(void *));
+        input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
+        memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
+
+        char *prompt = "Hi, how are you today?";
+
+        check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
+        input_info_ptr->input_values[number_inputs_llm] = NULL;
+        input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
+    } else {
+        assert(images);
+
+        input_info_ptr->input_values = malloc((num_images + 1) * sizeof(void *));
+
+        int size, flag;
+        for (int i = 0; i < num_images; i++) {
+            size_t shape[4] = {(int)images[i][0], (int)images[i][1], (int)images[i][2], (int)images[i][3]};
+
+            fprintf(stderr, "Image shape[%d]: %zu, %zu, %zu, %zu\n", i, shape[0], shape[1], shape[2], shape[3]);
+
+            flag = 0;
+            size = 1;
+            for (int j = 0; j < 4; j++) {
+                if (shape[j] != 0) {
+                    flag++;
+                    size *= shape[j];
+                }
+            }
+
+            float *temp_image = (float *) malloc(size * sizeof(float));
+            if (!temp_image) {
+                fprintf(stderr, "Error allocating memory for temp_image\n");
+                return NULL;
+            }
+            memcpy(temp_image, images[i] + flag, size * sizeof(float));
+
+            TractValue *input_value = NULL;
+            check_ret(tract_value_from_bytes(TRACT_DATUM_TYPE_F32, flag, shape, temp_image, &input_value), NULL);
+            free(temp_image);
+
+            input_info_ptr->input_values[i] = input_value;
+        }
+        input_info_ptr->input_values[num_images] = NULL;
+    }
 
     double sum = 0.0;
     m->head->outputs = input_info_ptr->input_values;

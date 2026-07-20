@@ -13,8 +13,6 @@
 #include <unistd.h>
 #include <ctype.h>
 
-#define NUMBER_INPUTS_LLM 3
-
 #define check(call) {                                                           \
     TRACT_RESULT result = call;                                                 \
     if(result == TRACT_RESULT_KO) {                                             \
@@ -278,7 +276,6 @@ run_inference_llm(operator_node **node, input_info *input_info_ptr, void *infere
     for (int i = 0; i < (*node)->num_inputs; i++) {
         if (!(*node)->parents || k >= (*node)->num_inputs) break;
         if (strcmp((*node)->parents[i]->model_name, "input") == 0) {
-
             fprintf(stderr, "Current k: %d: input_values[%d]\n", k, index);
             inputs[k] = input_info_ptr->input_values[index];
             input_shapefacts[k] = NULL;
@@ -311,7 +308,7 @@ run_inference_llm(operator_node **node, input_info *input_info_ptr, void *infere
     input_shapefacts[k] = NULL;
     fprintf(stderr, "final k: %d\n", k);
 
-    check(tract_inference_model_into_optimized_llm(inputs, k, input_shapefacts, input_datum_types, &inference_model, &transformed_model));
+    check(tract_inference_model_into_optimized_llm(k, input_shapefacts, input_datum_types, &inference_model, &transformed_model));
     assert(transformed_model);
 
 #ifndef USE_MEMORY_ONLY
@@ -918,7 +915,7 @@ initialize_inference_models(int num_models)
 }
 
 void
-onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_type, int index, operator_node *head, char *model_name)
+onnx_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model_ptr, ModelType model_type, int index, operator_node *head, char *model_name)
 {
     uintptr_t num_inputs = 0;
     uintptr_t num_outputs = 0;
@@ -985,17 +982,17 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
         o_io_first.input_names = NULL;
 
         #if NUM_TOKENS != 0
-            char **new_input_names = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(char *));
+            char **new_input_names = malloc((number_inputs_llm + 1) * sizeof(char *));
             if (!new_input_names) return;
             new_input_names[0] = strdup("input_ids");
-            if (NUMBER_INPUTS_LLM == 3) {
+            if (number_inputs_llm == 3) {
                 if (strstr(model_name, "albert") != NULL) {
                     new_input_names[2] = strdup("token_type_ids");
                 } else {
                     new_input_names[2] = strdup("position_ids");
                 }
                 new_input_names[1] = strdup("attention_mask");
-            } else if (NUMBER_INPUTS_LLM == 2) {
+            } else if (number_inputs_llm == 2) {
                 if (strstr(model_name, "minimal_albert") != NULL) {
                     new_input_names[0] = strdup("input_ids1");
                     new_input_names[1] = strdup("input_ids2");
@@ -1003,8 +1000,8 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
                     new_input_names[1] = strdup("attention_mask");
                 }
             }
-            new_input_names[NUMBER_INPUTS_LLM] = NULL;
-            o_io_first.output_names_length = NUMBER_INPUTS_LLM;
+            new_input_names[number_inputs_llm] = NULL;
+            o_io_first.output_names_length = number_inputs_llm;
             o_io_first.output_names = new_input_names;
         #else
             o_io_first.output_names_length = num_outputs;
@@ -1015,7 +1012,7 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
         update_node(io, index - 1, NULL);
 
         #if NUM_TOKENS != 0
-            for (int i = 0; i < NUMBER_INPUTS_LLM; i++) {
+            for (int i = 0; i < number_inputs_llm; i++) {
                 free(new_input_names[i]);
             }
             free(new_input_names);
@@ -1058,7 +1055,7 @@ onnx_model_inputs(operator_io **io, void *inference_model_ptr, ModelType model_t
 }
 
 void **
-load_model_to_memory(char **names, int model_count, operator_node **result_head)
+load_model_to_memory(char **names, int model_count, int number_inputs_llm, operator_node **result_head)
 {
     void **inference_models = initialize_inference_models(model_count + 1);
 
@@ -1112,7 +1109,7 @@ load_model_to_memory(char **names, int model_count, operator_node **result_head)
         }
         previous = curr_node;
 
-        onnx_model_inputs(io, inference_models[i], type, i, head, model_path);
+        onnx_model_inputs(io, number_inputs_llm, inference_models[i], type, i, head, model_path);
     }
 
     free_operator_io(io);
@@ -1295,6 +1292,7 @@ main(int argc, char **argv)
     ModelType type = MODEL_TYPE_CNN;
     void *tokenizer_ptr = NULL;
 
+    int number_inputs_llm = 0;
     if (strstr(argv[2], "tokenizer.json") != NULL) {
         type = MODEL_TYPE_LLM;
         FILE *fd = fopen(argv[2], "rb");
@@ -1343,21 +1341,26 @@ main(int argc, char **argv)
         check(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr));
         free(tokenizer);
 
-        input_info_ptr->input_values = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
-        input_info_ptr->input_shapefacts = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
-        input_info_ptr->input_datum_types = malloc((NUMBER_INPUTS_LLM + 1) * sizeof(void *));
-        memset(input_info_ptr->input_shapefacts, 0, (NUMBER_INPUTS_LLM + 1) * sizeof(void *));
+        number_inputs_llm = 3;
+        if (strstr(model_name, "gpt2") != NULL) number_inputs_llm = 2;
+
+        input_info_ptr->input_values = malloc((number_inputs_llm + 1) * sizeof(void *));
+        input_info_ptr->input_shapefacts = malloc((number_inputs_llm + 1) * sizeof(void *));
+        input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
+        memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
         
         char *prompt = NULL;
-        if (strstr(filenames[0], "albert") != NULL) {
+        if (strstr(model_name, "albert") != NULL) {
             prompt = "Paris is the [MASK] of France.";
+        } else if (strstr(model_name, "teeny-tiny-llama") != NULL) {
+            prompt = "Olá, como você está hoje?";
         } else {
             prompt = "Hi, how are you today?";
         }
         
-        check(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, NUMBER_INPUTS_LLM));
-        input_info_ptr->input_values[NUMBER_INPUTS_LLM] = NULL;
-        input_info_ptr->input_datum_types[NUMBER_INPUTS_LLM] = NULL;
+        check(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm));
+        input_info_ptr->input_values[number_inputs_llm] = NULL;
+        input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
     } else {
         input_info_ptr->input_values = malloc((argc - 1) * sizeof(void *));
         for (int i = 2; i < argc; i++) {
@@ -1397,7 +1400,7 @@ main(int argc, char **argv)
      
     operator_node *head = NULL;
     void **inference_models = NULL;
-    inference_models = load_model_to_memory(filenames, num_models, &head);
+    inference_models = load_model_to_memory(filenames, num_models, number_inputs_llm, &head);
 #ifndef USE_MEMORY_ONLY
     free_inference_models(inference_models, num_models + 1, type);
     inference_models = NULL;
@@ -1430,7 +1433,7 @@ main(int argc, char **argv)
 
             if (last_node) fprintf(stderr, "Last_node outputs %d, name: %s\n", last_node->num_outputs, last_node->model_name);
             
-            if (NUM_TOKENS > 1) {
+            if (NUM_TOKENS > 0) {
                 char *inference = NULL;
                 uintptr_t next_token_id = 0;
                 tokens++;
@@ -1438,7 +1441,7 @@ main(int argc, char **argv)
                 fprintf(stderr, "%s\nNext_token_id: %ld\n", inference, next_token_id);
                 tract_free_cstring(inference);
                 
-                if (is_llm && strstr(model_name, "albert") == NULL) {
+                if (NUM_TOKENS > 1 && is_llm && strstr(model_name, "albert") == NULL) {
                     check(tract_update_input_values_llm(input_info_ptr->input_values, num_inputs, next_token_id));
                 }
                 free_operator_node_output(head, type);

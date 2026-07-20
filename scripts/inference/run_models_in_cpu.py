@@ -41,7 +41,7 @@ def client_side(unique_id):
 
     path_ = f"{inferONNX_path}/models/{path[unique_id]}"
     input_file = f"{path_}test_data_set_0/input_0.pb"
-    is_llm = "albert" in path[unique_id] or "gpt" in path[unique_id]
+    is_llm = "albert" in path[unique_id] or "gpt" in path[unique_id] or "llama" in path[unique_id] or "qwen" in path[unique_id] or "mistral" in path[unique_id]
     if is_llm:
         input_file = f"{path_}test_data_set_0/tokenizer.json"
 
@@ -63,9 +63,9 @@ def manage_connection():
     for model_name in path:
         if "tls" in configuration:
             num_tokens = 0
-            is_llm = "albert" in path[unique_id] or "gpt" in path[unique_id]
+            is_llm = "albert" in path[unique_id] or "gpt" in path[unique_id] or "llama" in path[unique_id] or "qwen" in path[unique_id] or "mistral" in path[unique_id]
             if is_llm:
-                num_tokens = 10
+                num_tokens = 1
 
             init_server_client(num_tokens)
 
@@ -108,12 +108,15 @@ def main():
     server_without_tls_path = os.path.join(inferONNX_path, "src/server_without_tls")
     global path
     path = [
-        "squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
-        "efficientnet-lite4-11/", "inception-v3-12/", 
-        "resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/",
+        #"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
+        #"efficientnet-lite4-11/", "inception-v3-12/", 
+        #"resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/",
 
         #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
-        #"gpt2/", "albert-large-v2/"
+        #"gpt2/", "albert-large-v2/", "mistral-300M/", "teeny-tiny-llama-460M/", "qwen2.5-0.5B/"
+        #"albert-large-v2/", "mistral-300M/", "teeny-tiny-llama-460M/", "qwen2.5-0.5B/"
+        #"smol-llama-220M-GQA/", "mistral-300M/", "qwen2.5-0.5B/"
+        "gpt2/"
     ]
 
     if "tls" not in configuration:

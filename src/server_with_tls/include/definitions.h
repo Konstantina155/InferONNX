@@ -24,7 +24,7 @@
 #define IV_BYTES 12
 #define TAG_BYTES 16
 #define ADD_DATA_BYTES 64
-#define BUF_SIZE 4096
+#define BUF_SIZE 16384 //4096
 #define SMALL_SIZE 512
 #define CHUNK_SIZE (100L * 1024 * 1024)
 
@@ -72,7 +72,6 @@ typedef struct operator_node {
     #if USE_AES == 0 && USE_MEMORY_ONLY == 0 || USE_AES == 1 && USE_MEMORY_ONLY == 1
         void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
     #elif USE_AES == 1
-        //testing -- added inference_model_ptr
         void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
     #endif
     void **outputs;

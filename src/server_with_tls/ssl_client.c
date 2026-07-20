@@ -24,7 +24,7 @@
 #define SERVER_NAME "localhost" //server's IP when client in different machine
 
 #define DEBUG_LEVEL 1
-#define BUF_SIZE 4096
+#define BUF_SIZE 16384 //4096
 #define TAG_SIZE 16
 #if NUM_TOKENS > 0
     #define CHUNK_SIZE (100L * 1024 * 1024)

@@ -24,22 +24,27 @@ def create_tag_file(file_path):
 def run_command(command):
     subprocess.run(command, shell=True, check=True)
     
-def run_all_and_create_plot(path_to_scripts, number_of_runs, partitions_folder, inferONNX_path):
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching entire {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk entire {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {partitions_folder} {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_on_disk {number_of_runs} {inferONNX_path}")
+def run_all_and_create_plot(path_to_scripts, number_of_runs, partitions_folder, inferONNX_path):   
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching entire 1 {number_of_runs} {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk entire 1 {number_of_runs} {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {partitions_folder} 1 {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire 1 {number_of_runs} {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_on_disk {number_of_runs} {inferONNX_path}")
     run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py on_disk {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only {number_of_runs} {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py on_disk {number_of_runs} {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only {number_of_runs} {inferONNX_path}")
 
-    run_command(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {partitions_folder} {number_of_runs}")
+    #run_command(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {partitions_folder} {number_of_runs}")
 
-def measure_each_op_time(path_to_scripts, inferONNX_path):
+def measure_each_op_time(path_to_scripts, partitions_folder, inferONNX_path):
     os.makedirs(f"{inferONNX_path}/memory_intensive_ops", exist_ok=True)
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only_operators 1 {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only_operators entire 1 {inferONNX_path}")
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py memory_only_operators 1 {inferONNX_path}")
+    
+    # for the whole the op_memory_usage is this line, partitions for each layer
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only_operators partitions/ 1 1 {inferONNX_path}")
+    
+    #run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only_operators entire 1 1 {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only_operators {partitions_folder} 1 1 {inferONNX_path}")
 
 def clean_up(tag_files, inferONNX_path):
     for tag_file in tag_files:
@@ -47,7 +52,7 @@ def clean_up(tag_files, inferONNX_path):
 
     os.chdir(inferONNX_path)
     run_command('rm -rf ../occlum_workspace ../certificates ../unencrypted_models ../encrypted_models')
-    run_command(f'rm src/server_with_tls/inference_time_* src/server_without_tls/inference_time_*')
+    #run_command(f'rm src/server_with_tls/inference_time_* src/server_without_tls/inference_time_*')
 
 def main():
     if len(sys.argv) != 3:
@@ -75,7 +80,7 @@ def main():
     create_tag_file(tag_no_tls_server)
 
     run_all_and_create_plot(path_to_scripts, number_of_runs, partitions_folder, inferONNX_path)
-    measure_each_op_time(path_to_scripts, inferONNX_path)
+    #measure_each_op_time(path_to_scripts, partitions_folder, inferONNX_path)
 
     clean_up([tag_no_tls_server, tag_tls_server], inferONNX_path)
 

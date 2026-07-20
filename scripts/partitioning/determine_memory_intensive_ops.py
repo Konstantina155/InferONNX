@@ -149,7 +149,7 @@ def update_operator_times(config1, config2, model):
     keys1.pop(0)
 
     k = 1
-    nlp_exceptions = {'input_ids', 'attention_mask', 'token_type_ids'}
+    nlp_exceptions = {'input_ids', 'attention_mask', 'token_type_ids', 'position_ids'}
     for exc in nlp_exceptions:
         if exc in keys1:
             k += 1
