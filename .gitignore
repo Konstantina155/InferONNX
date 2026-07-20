@@ -17,4 +17,4 @@ models/teeny-tiny-llama-460M/
 models/mistral-300M/
 models/smol-llama-220M-GQA/
 models/gpt2/
-*.csv
+*.csv*.onnx
