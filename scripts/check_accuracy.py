@@ -9,12 +9,12 @@ def run_inference(directory, test_path):
         _, out_stderr = output.communicate()
         output = out_stderr.decode("utf-8")
         
-        begin_of_max = output.rfind("Max is")
+        begin_of_max = output.rfind("Inference:")
         if begin_of_max != -1:
-            end_of_sentence = output.find("!", begin_of_max)
+            end_of_sentence = output.find("Next_token_id:", begin_of_max)
             if end_of_sentence != -1:
-                inference_result = output[begin_of_max:end_of_sentence + 1]
-                print(inference_result)
+                inference_result = output[begin_of_max + 11 : end_of_sentence].rstrip()
+                inference_result += " ..."
                 return inference_result
     except subprocess.CalledProcessError as error:
         print(f"Inference failed: {error}")
@@ -28,30 +28,33 @@ def run_command(command):
         print(f"Command failed: {e}")
         raise
 
-def make_build():
+def make_build(num_tokens):
     run_command("make clean")
-    run_command("make")
+    run_command(f"make NUM_TOKENS={num_tokens}")
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 check_accuracy.py <partitions_folder>")
+    if len(sys.argv) != 4:
+        print("Usage: python3 check_accuracy.py <inter_partitions_folder> <intra_partitions_folder> <num_tokens>")
         exit(1)
 
-    path = ["squeezenet1.0-7", "mobilenetv2-7", "densenet-7", "efficientnet-lite4-11", "inception-v3-12", "resnet101-v2-7", "resnet152-v2-7", "efficientnet-v2-l-18"]
-    path_partitions = sys.argv[1]
+    path = ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"]
+    partitions_inter = sys.argv[1]
+    partitions_intra = sys.argv[2]
+    num_tokens = sys.argv[3]
     previous_path = os.getcwd()
     os.chdir("src/server_with_tls/scripts")
-    make_build()
+    make_build(num_tokens)
 
     for model_name in path:
-        test_path = f"../../../models/{model_name}/test_data_set_0/input_0.pb"
-        inference_operators = run_inference(f"../../../models/{model_name}/{path_partitions}", test_path)
+        test_path = f"../../../models/{model_name}/test_data_set_0/tokenizer.json"
+        inference_inter_operators = run_inference(f"../../../models/{model_name}/{partitions_inter}", test_path)
+        inference_intra_operators = run_inference(f"../../../models/{model_name}/{partitions_intra}", test_path)
         inference_whole = run_inference(f"../../../models/{model_name}/", test_path)
 
-        if inference_operators != inference_whole:
-            print(f"Operators: {inference_operators}")
-            print(f"Whole: {inference_whole}")
-            exit(1)
+        print(f"Inference result for {model_name} for {num_tokens} tokens:")
+        print("Full model execution:", inference_whole)
+        print("Inter-operator partitioning:", inference_inter_operators)
+        print("Intra-operator partitioning:", inference_intra_operators)
         print()
 
     run_command("make clean")

@@ -25,11 +25,9 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
     minimum_stats = 4
     stats = 9
 
-    is_llm = "albert" in model_name or "gpt" in model_name or "llama" in model_name or "qwen" in model_name or "mistral" in model_name
+    is_llm = "gpt" in model_name or "llama" in model_name or "mistral" in model_name or "qwen" in model_name
     if is_llm:
-        if "albert" in model_name and "split0" in model_name:
-            stats += (num_tokens * num_partitions) - 1
-        elif "qwen" in model_name or "split0" in model_name:
+        if "qwen" in model_name or "split0" in model_name:
             stats += (num_tokens * 2)
         else:
             stats += num_tokens - 1
@@ -52,8 +50,7 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
                     lines_below = lines[i:i+stats+1]
                 else:
                     lines_below = lines[i:i+stats+1+num_partitions]
-                # print(lines_below)
-                # exit(1)
+        
                 k = 0
                 for line in lines_below:
                     if num_partitions > 1 and f"Partition_{k}:" in line:

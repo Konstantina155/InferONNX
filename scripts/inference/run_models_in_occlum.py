@@ -32,28 +32,10 @@ def modify_occlum_json(user_space):
     with open(file_path, 'r') as file:
         data = json.load(file)
     data['resource_limits']['user_space_size'] = user_space
-    data['resource_limits']['kernel_space_heap_size'] = "128MB" #"64MB"
+    data['resource_limits']['kernel_space_heap_size'] = "128MB"
     with open(file_path, 'w') as file:
         json.dump(data, file, indent=4)
     print(f"'user_space_size' updated to {data['resource_limits']['user_space_size']}")
-
-# def extract_hex_numbers(text):
-#     start_time = tme.time()
-#     pattern = r"[a-fA-F0-9]+"
-#     hex_numbers = re.findall(pattern, text)
-#     hex_numbers = [h for h in hex_numbers if len(h) == 32]
-#     print(len(hex_numbers))
-    
-#     if hex_numbers:
-#         start_time2 = tme.time()
-#         with open(tag_file_path, 'w', buffering=65536) as f:
-#             f.write("\n".join(hex_numbers))
-#     else:
-#         print("No hex numbers found.")
-
-#     with open("/hdd/papafrkon/github_repo/InferONNX/test.txt", "a") as f:
-#         f.write("--- %s seconds ---" % (tme.time() - start_time))
-#         f.write("--- %s seconds ---\n" % (tme.time() - start_time2))
 
 def extract_hex_numbers(text):
     start_time = tme.time()
@@ -69,7 +51,7 @@ def extract_hex_numbers(text):
         print("No hex numbers found.")
     
 def client_side(partition_folder, unique_id):
-    is_llm = "albert" in path[unique_id] or "gpt" in path[unique_id] or "llama" in path[unique_id] or "qwen" in path[unique_id] or "mistral" in path[unique_id]
+    is_llm = "gpt" in path[unique_id] or "llama" in path[unique_id] or "mistral" in path[unique_id] or "qwen" in path[unique_id]
     if is_llm:
         tme.sleep(200)
     else:
@@ -137,16 +119,12 @@ def manage_connection():
     for model_name in path:
         modify_occlum_json(occlum_user_space[unique_id])
 
-        filename = ""
         if configuration == "memory_only_operators":
-            if entire_or_partition == "entire":
-                filename += "_all"
-            with open(f"{inferONNX_path}/memory_intensive_ops/{model_name[:-1]}{filename}.txt", 'a') as file:
+            with open(f"{inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt", 'a') as file:
                 file.write("\nSGX\n----\n")
 
         num_tokens = 0
-        if "albert" in model_name or "gpt" in model_name or \
-            "qwen" in model_name or "llama" in model_name or "mistral" in model_name:
+        if "gpt" in model_name or "llama" in model_name or "mistral" in model_name or "qwen" in model_name:
             num_tokens = number_of_tokens
 
         for i in range(num_runs):
@@ -158,7 +136,7 @@ def manage_connection():
 
             command = f"cp {server_with_tls_path}/src/./occlum_server image/bin && occlum build && occlum run /bin/occlum_server"
             if configuration == "memory_only_operators":
-                command += f" >> {inferONNX_path}/memory_intensive_ops/{model_name[:-1]}{filename}.txt"
+                command += f" >> {inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt"
 
             run_command(command, cwd=f"{path_to_occlum}/occlum_workspace")
             client.join()
@@ -193,8 +171,8 @@ def close_connection():
     output.wait()
 
 def main():
-    if len(sys.argv) != 6 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-        print("Usage: python3 run_models_in_occlum.py <memory_only/memory_only_operators/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_tokens> <number_of_runs> <path_to_inferONNX>")
+    if (len(sys.argv) != 6 and len(sys.argv) != 7) or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
+        print("Usage: python3 run_models_in_occlum.py <memory_only/memory_only_operators/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_tokens> <number_of_runs> <path_to_inferONNX> <''/model_name_for_memory_only_operators>")
         exit(1)
 
     global configuration, entire_or_partition, number_of_tokens, num_runs, inferONNX_path
@@ -203,6 +181,10 @@ def main():
     number_of_tokens = int(sys.argv[3])
     num_runs = int(sys.argv[4])
     inferONNX_path = sys.argv[5]
+    model_folder = ""
+    if len(sys.argv) == 7:
+        model_folder = sys.argv[6]
+        assert model_folder != "", "Model folder is not provided" 
 
     if inferONNX_path == "./":
         inferONNX_path = os.getcwd()
@@ -211,45 +193,26 @@ def main():
     path_to_occlum = os.path.join(inferONNX_path, "..")
     server_with_tls_path = os.path.join(inferONNX_path, "src/server_with_tls")
     tag_file_path = os.path.join(server_with_tls_path, "tag_file.txt")
-    global path
-    path = [
-        #"squeezenet1.0-7/", "mobilenetv2-7/", "densenet-7/", 
-        #"efficientnet-lite4-11/", "inception-v3-12/", 
-        #"resnet101-v2-7/", "resnet152-v2-7/", "efficientnet-v2-l-18/"
-
-        #"resnet18-v2-7/", "resnet50-v2-7/", "yolox-l-11/",
-        #"gpt2/", "albert-large-v2/", "mistral-300M/", "teeny-tiny-llama-460M/", "qwen2.5-0.5B/"
-        
-        #"smol-llama-220M-GQA/", "mistral-300M/", "qwen2.5-0.5B/"
-        #"gpt2/", "cerebras-gpt-111M/"
-        "gpt2/"
-    ]
 
     global partition_folder, occlum_user_space
     partition_folder = entire_or_partition if "partitions" in entire_or_partition else ""
     
     # Max capacity: 23GB
-    occlum_user_space = [   #"300MB", "300MB", "300MB", 
-                            #"400MB", "700MB",
-                            #"2GB", "2GB", "3GB",
-
-                            #"400MB", "800MB", "2GB",
-                            #"5GB", "8GB", "14GB", "16GB" # for llms before new impl
-                            # load the model 10 times -> "9GB", "9GB", "9GB", "13GB", "15GB", #None
-                            # inference time to load from disk
-                                # mistral 200 partitions: 10GB for 4 tokens
-                                # ttl 200 partitions:
-                                    # 14GB - 2 & 4 tokens, 17GB - 5 tokens, 19GB - 7 tokens, 
-                                    # 21GB - 8 tokens, 23GB - 10 tokens
-                                # qwen 200 partitions:
-                                    # 16GB - 1 tokens,
-                                    # 21GB - 4 tokens,
-                            #"9GB" for albert
-                            #### 
-                            #"6GB", "9GB", "13GB", "16GB" # smol-llama, mistral, ttl, qwen
-                            #"5GB" ##"6GB", "9GB", "16GB"
-                            "5GB"
-                        ]
+    global path
+    if model_folder == "":
+        path = [
+            "gpt2/", "smol-llama-220M-GQA/", "mistral-300M/", "qwen2.5-0.5B/"
+        ]
+        occlum_user_space = ["5GB", "6GB", "9GB", "16GB"]
+    else:
+        if "gpt" in model_folder:
+            occlum_user_space = ["5GB"]
+        elif"llama" in model_folder:
+            occlum_user_space = ["6GB"]
+        elif "" in model_folder:
+            occlum_user_space = ["9GB"]
+        else:
+            occlum_user_space = ["16GB"]
 
 
     manage_connection()

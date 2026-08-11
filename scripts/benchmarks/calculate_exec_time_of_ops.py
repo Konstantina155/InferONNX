@@ -93,10 +93,10 @@ def parse_execution_times_operators(file_content, is_nlp, file_path):
                 continue
             i += 1
  
-        if "smol-llama" in file_path or "cerebras" in file_path:
+        if "smol-llama" in file_path:
             layers = 10
         elif "gpt2" in file_path:
-            layers = 12 # 117M params
+            layers = 12
         else:
             layers = 24
 
@@ -109,11 +109,13 @@ def parse_execution_times_operators(file_content, is_nlp, file_path):
             heavy_ops += ["/model/embed_tokens/Gather"]
             heavy_ops += [f"/model/layers.{i}/mlp/gate_proj/MatMul" for i in range(layers)]
             heavy_ops += [f"/model/layers.{i}/mlp/up_proj/MatMul" for i in range(layers)]
-            heavy_ops += [f"/model/layers.{i}/mlp/down_proj/MatMul.pack_a" for i in range(layers)]
+            heavy_ops += [f"/model/layers.{i}/mlp/down_proj/MatMul" for i in range(layers)]
         else:
             heavy_ops += ["/transformer/wte/Gather"]
-        for op in heavy_ops:
-            operators.pop(op)
+        heavy_ops_tuple = tuple(heavy_ops)
+        for op in list(operators.keys()):
+            if op.startswith(heavy_ops_tuple):
+                operators.pop(op)
 
     result = [{"operator": op, "total_time_ms": time} for op, time in operators.items()]
     if debug:
@@ -130,10 +132,8 @@ def parse_execution_times(file_content, operation, file_path):
 
     lines = lines[2:]
     if operation == "head_matmul":
-        if "cerebras" in file_path:
-            start_point = "/transformer/Reshape_5_output_0"
-        elif "gpt" in file_path:
-            start_point = "/transformer/Reshape_3_output_0"  
+        if "gpt" in file_path:
+            start_point = "/transformer/Reshape_3_output_0"
         else:
             start_point = "/model/norm/Mul_1_output_0"
         end_point = "logits_0"
@@ -188,13 +188,19 @@ def parse_execution_times(file_content, operation, file_path):
             current_time += time_taken
         else:
             continue
+
     if "proj_matmul" not in operation and "gemm" not in operation:
         time.append(current_time)
         result = sum(time)
     else:
         result = sum(time) / len(time)
-    print(time, len(time))
+    if debug:
+        print(time, len(time))
     return result
+
+def find_text_above_gemm(extracted_content, text):
+    top_half = extracted_content.split(text)[0]
+    return top_half.split('\n')[-3:-2]
 
 def process_file(file_path, occurrence, operation):
     with open(file_path, 'r') as f:
@@ -225,35 +231,36 @@ def process_file(file_path, occurrence, operation):
         split_point = '"/model/layers.0/mlp/Mul" MulUnicast'
         parts = extracted_content.split(split_point, 1)
     elif operation == "c_fc_gemm":
-        split_point = '"/transformer/h.0/mlp/c_fc/Reshape.0" Reshape'
+        top_half = extracted_content.split('"/transformer/h.0/mlp/c_fc/Gemm')[0]
+        split_point = top_half.split('\n')[-3:-2][0]
         parts = extracted_content.split(split_point, 1)
     elif operation == "c_proj_gemm":
-        split_point = '"/transformer/h.0/mlp/c_proj/Reshape.0" Reshape'
+        top_half = extracted_content.split('"/transformer/h.0/mlp/c_proj/Gemm')[0]
+        split_point = top_half.split('\n')[-3:-2][0]
         parts = extracted_content.split(split_point, 1)
     elif operation == "gather":
         split_point = 'input_ids'
         if "gpt" not in file_path or occurrence == 1:
             parts = extracted_content.split(split_point, 1)
         else:
-            if "cerebras" in file_path: split_point = "/transformer/Where_4"
             split_point_end = '"/transformer/wte/Gather_output_0" Source'
             parts_at_end = extracted_content.split(split_point_end, 1)
             parts = parts_at_end[0].split(split_point, 1)
     else:
-        if "gpt2" in file_path:
-            split_point = '/transformer/h.11/attn/Slice_3'
+        down_half = extracted_content.rsplit('"adhoc', 1)
+        lines_below = down_half[1].split('\n', 3)
+        if "Slice" in lines_below[0] or "takes" in lines_below[0]:
+            split_point = lines_below[1]
         else:
-            split_point = 'input_ids'
+            split_point = lines_below[2]
         idx = extracted_content.find(split_point)
-        parts = [extracted_content[:idx], extracted_content[idx - 25:]]
+        parts = [extracted_content[:idx], extracted_content[idx:]]
     
     content_below_target = parts[1]
     if len(parts) < 2:
         return "Target line not found in the extracted content."
 
-    is_nlp = "bert" in file_path or "gpt" in file_path or \
-        "llama" in file_path or "qwen" in file_path or \
-        "deepseek" in file_path or "mistral" in file_path
+    is_nlp = "gpt" in file_path or "llama" in file_path or "mistral" in file_path or "qwen" in file_path
     if operation == "all":
         exec_time = parse_execution_times_operators(content_below_target, is_nlp, file_path)
     else:
@@ -261,26 +268,26 @@ def process_file(file_path, occurrence, operation):
     print(f"Average execution time: {exec_time}")
 
 def main():
-    if len(sys.argv) != 4 and len(sys.argv) != 5:
-        print("python3 calc_exec_ops.py <gather/head_matmul/gate_proj_matmul/up_proj_matmul/down_proj_matmul/c_fc_gemm/c_proj_gemm/all> <model_name> <occurence_from_beginning> <debug/''>")
+    if len(sys.argv) != 5 and len(sys.argv) != 6:
+        print("python3 calculate_exec_time_of_ops.py <inferONNX_path> <gather/head_matmul/gate_proj_matmul/up_proj_matmul/down_proj_matmul/c_fc_gemm/c_proj_gemm/all> <model_name> <occurence_from_beginning> <debug/''>")
         sys.exit(1)
 
     global debug
-
-    operation = sys.argv[1]
-    file_name = sys.argv[2]
-    occurence = int(sys.argv[3])
-    assert file_name in ["gpt2", "cerebras-gpt-111M", "smol-llama-220M-GQA", "mistral-300M", "teeny-tiny-llama-460M", "qwen2.5-0.5B"], "Model name is not correct"
+    inferONNX_path = sys.argv[1]
+    operation = sys.argv[2]
+    file_name = sys.argv[3]
+    occurence = int(sys.argv[4])
+    assert file_name in ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"], "Model name is not correct"
     assert operation in ["head_matmul", "gather", "up_proj_matmul", "gate_proj_matmul", "down_proj_matmul", "c_fc_gemm", "c_proj_gemm", "all"], "Operation should be gather or head_matmul or {gate/up/down}_proj/matmul / {c_fc/c_proj}/Gemm or all"
     assert occurence > 0, "Occurence is not > 0"
     
-    if len(sys.argv) == 5:
-        assert sys.argv[4] == "debug", "Debug mode is not correct"
+    if len(sys.argv) == 6:
+        assert sys.argv[5] == "debug", "Debug mode is not correct"
         debug = True
     else:
         debug = False
 
-    file_path = f'./memory_intensive_ops/{file_name}.txt'
+    file_path = f'{inferONNX_path}/memory_intensive_ops/{file_name}.txt'
 
     if os.path.isfile(file_path):
         print("Processing file:", file_path, "for operation:", operation)

@@ -49,18 +49,15 @@ def capture_profiling(func, *args, **kwargs):
 
 def profile_to_df(graph, shape, model_name, exclude_ops=None):
     m = onnx_tool.Model(graph)
-    
-    if any(x in model_name for x in ["qwen", "mistral", "smol-llama", "gpt2", "cerebras-gpt"]):
-        if "qwen" in model_name:
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}qwen2.5-0.5B/test_data_set_0/tokenizer.json")
+    if any(x in model_name for x in ["gpt2", "smol-llama", "mistral", "qwen"]):
+        if "gpt2" in model_name:
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}gpt2/test_data_set_0/tokenizer.json")
+        elif "llama" in model_name:
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}smol-llama-220M-GQA/test_data_set_0/tokenizer.json")
         elif "mistral" in model_name:
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}mistral-300M/test_data_set_0/tokenizer.json")
-        elif "gpt2" in model_name:
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}gpt2/test_data_set_0/tokenizer.json")
-        elif "cerebras" in model_name:
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}cerebras-gpt-111M/test_data_set_0/tokenizer.json")
         else:
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}smol-llama-220M-GQA/test_data_set_0/tokenizer.json")
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{models_dir}qwen2.5-0.5B/test_data_set_0/tokenizer.json")
         prompt = "Hi, how are you today?"
         input_ids = tokenizer.encode(prompt, return_tensors='np')
         attention_mask = np.ones(input_ids.shape, dtype=np.int64)
@@ -106,10 +103,11 @@ def get_label(name_list, group):
     return "".join(unique_labels)
 
 def run_command_with_output(cmd, cwd=None):
-    output = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, shell=True)
+    output = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     (info_time, err) = output.communicate()
     if err:
         print(f"Error executing command: {cmd}")
+        print(f"Error details: {err.decode('utf-8')}")
         sys.exit(1)
     return info_time.decode('utf-8')
 
@@ -122,7 +120,7 @@ def get_execution_times(models): # head_matmul, gather, average of gate + up, do
             if ("gpt" in model and "proj_matmul" in op) or ("gpt" not in model and "gemm" in op):
                 average_time = 0.0
             else:
-                result = run_command_with_output(f"python3 {inferONNX_path}/calculate_exec_time_of_ops.py {op} {model} 1")
+                result = run_command_with_output(f"python3 {inferONNX_path}/scripts/benchmarks/calculate_exec_time_of_ops.py {inferONNX_path} {op} {model} 1")
                 average_time = result.rsplit("Average execution time:", 1)[-1].lstrip().split("\n")[0]
             times.append(float(average_time))
         exec_time[model] = times
@@ -130,14 +128,14 @@ def get_execution_times(models): # head_matmul, gather, average of gate + up, do
     return exec_time
 
 def plot_memory_ops(all_models_memory, models, K=10):
-    fig, ax = plt.subplots(figsize=(26, 16)) #23, 16 last dimensions # 20,13 or 23,13
+    fig, ax = plt.subplots(figsize=(26, 16))
     ax_time = ax.twinx()
-    bar_width, spacing = 0.22, 0.05 # previous 0.29, 0.1 #0.27, 0.05
+    bar_width, spacing = 0.22, 0.05
 
     colors_memory = [
-        '#F7D469', #'#F2C94C',
+        '#F7D469',
         '#E08A66',
-        '#8FC1E3', #'#8FC1E3',
+        '#8FC1E3',
         '#9E80A3',
     ]
 
@@ -157,9 +155,8 @@ def plot_memory_ops(all_models_memory, models, K=10):
         groups["Label"] = groups.apply(lambda row: get_label(row["Name"], row["Group"]), axis=1)
         groups = groups.sort_values(by="Memory_MB", ascending=False).head(K)
         model_data.append((model_name, groups))
-        print(groups)
     
-    markers = ['o', 's', 'D', 'v'] # last one to remove
+    markers = ['o', 's', 'D', 'v']
     exec_time = get_execution_times(models)
 
     for i, (model_name, groups) in enumerate(model_data):
@@ -181,11 +178,9 @@ def plot_memory_ops(all_models_memory, models, K=10):
         else:
             mean = (exec_time_model[2] + exec_time_model[3]) / 2
             exec_vals = np.array([exec_time_model[0], exec_time_model[1], mean, exec_time_model[4], exec_time_model[7]])
-        print(exec_vals)
         exec_vals_sorted = np.sort(exec_vals)[::-1]
         cum_data = np.cumsum(exec_vals_sorted) / exec_vals.sum() * 100
         x_pareto = np.arange(len(exec_vals_sorted)) + i * bar_width
-        print(x_pareto, cum_data)
         ax_time.plot(x_pareto, cum_data, marker=markers[i % len(markers)], linestyle='-', linewidth=3, markersize=14, color="darkred")
     
     legend_handles = [
@@ -195,24 +190,6 @@ def plot_memory_ops(all_models_memory, models, K=10):
         Patch(facecolor=colors_memory[3], edgecolor='black', linewidth=2, label=model_names[3]),
     ]
     ax.legend(handles=legend_handles, fontsize=31.3, bbox_to_anchor=(1.024, 1.15), ncol=len(model_names), frameon=False)
-    # previous fontsize=34,5 and bbox=1.01, 1.15
-
-    # labels = [md[1]["Label"].tolist() for md in model_data]
-    # max_len = max(len(l) for l in labels)
-    # ticks = []
-    # tick_labels = []
-    # import itertools
-    # for i in range(max_len):
-    #     current_data = []
-    #     for j, l in enumerate(labels):
-    #         if i < len(l):
-    #             pos = i + j * bar_width 
-    #             current_data.append((pos, l[i]))
-
-    #     for label_text, group in itertools.groupby(current_data, key=lambda x: x[1]):
-    #         positions = [item[0] for item in group]
-    #         ticks.append(np.mean(positions))
-    #         tick_labels.append(label_text)
 
     ticks = []
     tick_labels = []
@@ -224,21 +201,19 @@ def plot_memory_ops(all_models_memory, models, K=10):
     ticks, tick_labels = zip(*sorted(zip(ticks, tick_labels)))
     ax.set_xticks(ticks)
     ax.set_xticklabels(tick_labels, rotation=90, fontsize=30)
-    # for label in ax.get_xticklabels():
-    #     label.set_linespacing(1.3)
 
     # Formatting
     ax_time.set_ylabel("Cumulative execution", fontsize=43, labelpad=30)
     ax_time.yaxis.set_major_formatter(PercentFormatter())
-    ax_time.set_ylim(87, 100) # was 95, maybe adjust
+    ax_time.set_ylim(87, 100)
     ax_time.tick_params(axis='y', labelsize=35)
 
     ax.set_ylabel("Memory size (MB)", fontsize=43, labelpad=30)
     ax.set_yscale('log')
     ax.tick_params(axis='y', labelsize=35)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.93) # 0.91
-    plt.savefig(f"{inferONNX_path}/results/figure7_memory_ops_gpt.pdf", format='pdf', dpi=600)
+    plt.subplots_adjust(top=0.93)
+    plt.savefig(f"{inferONNX_path}/results/figure2_journal.pdf", format='pdf', dpi=600)
 
 def find_op_types(memory_df):
     types_list = memory_df['Type'].tolist()
@@ -266,7 +241,7 @@ def main():
     for model in models:
         model_name = models_dir + model + '/' + model + ".onnx"
         modelpath = onnx.load(model_name)
-        shape, initial_node = find_shape(modelpath)
+        shape, _ = find_shape(modelpath)
         memory_df = profile_to_df(modelpath, shape, model_name)
         memory_df.to_csv(model + '_detailed.csv')
 
@@ -275,13 +250,12 @@ def main():
             (memory_df["Type"] != "Constant")
         ].copy()
         memory_df["Memory_MB"] = memory_df["Memory"].astype(int) / (1024 * 1024)
-        sorted_memory_df = memory_df.sort_values(by="Memory_MB", ascending=False)
-        print(sorted_memory_df.head(5))
+        #sorted_memory_df = memory_df.sort_values(by="Memory_MB", ascending=False)
 
         #find_op_types(memory_df)
         all_models_memory[model] = memory_df
 
-    #plot_memory_ops(all_models_memory, models, K=100)
+    plot_memory_ops(all_models_memory, models, K=100)
 
 
 if __name__ == "__main__":

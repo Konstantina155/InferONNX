@@ -14,7 +14,7 @@ split_mode = sys.argv[2]
 number_of_divisions = int(sys.argv[3])
 InferONNX_path = sys.argv[4]
 assert number_of_divisions > 0, "Number of divisions must be > 0"
-assert model_name in ["gpt2", "cerebras-gpt-111M", "smol-llama-220M-GQA", "mistral-300M", "teeny-tiny-llama-460M", "qwen2.5-0.5B"], "Model name is not correct"
+assert model_name in ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"], "Model name is not correct"
 assert split_mode in ["row", "column"], "Split method is not correct"
 
 model_path = os.path.join(InferONNX_path, "models")

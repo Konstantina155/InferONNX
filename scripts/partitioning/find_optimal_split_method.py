@@ -29,7 +29,7 @@ def split_and_execute(model_name, split_mode, number_splits, num_partitions, spl
         print(f"Number of partitions + the split parts does not match the partitions intra when splitting {splitting_op}!\n")
         sys.exit(1)
 
-    output = subprocess.Popen(f"python3 {inferONNX_path}scripts/run_all.py partitions_intra/ 1", stdout=subprocess.PIPE, shell=True)
+    output = subprocess.Popen(f"python3 {inferONNX_path}scripts/run_all.py split_op partitions_intra/ 1", stdout=subprocess.PIPE, shell=True)
     (_, err) = output.communicate()
     if err:
         print(f"Error executing command: {command}")
@@ -37,15 +37,14 @@ def split_and_execute(model_name, split_mode, number_splits, num_partitions, spl
 
 def main():
     if len(sys.argv) != 2:
-        print("python3 calc_optimal_split_method.py <path_to_InferONNX>")
+        print("python3 find_optimal_split_method.py <path_to_InferONNX>")
         sys.exit(1)
 
-    # Matmul optimal sol: 128 column for both gpt2 and cerebras-gpt-111M
     global model_path, inferONNX_path
     inferONNX_path = sys.argv[1]
     number_of_divisions = ["2", "4", "8", "16", "32", "64", "128", "256"]
     split_modes = ["row", "column"]
-    models = ["cerebras-gpt-111M", "gpt2", "smol-llama-220M-GQA", "mistral-300M", "teeny-tiny-llama-460M", "qwen2.5-0.5B"]
+    models = ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"]
     model_path = os.path.join(inferONNX_path, "models")
     for model_name in models:
         result = subprocess.run(f"ls {model_path}/{model_name}/partitions_inter/ | wc -w", shell=True, text=True, capture_output=True)

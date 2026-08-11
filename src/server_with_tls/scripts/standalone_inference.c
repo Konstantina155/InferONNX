@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
+// Available prompts: "Paris is the [MASK] of France." for albert, "Olá, como você está hoje?" for TTL and "Hi, how are you today?" for the rest
+
 #define check(call) {                                                           \
     TRACT_RESULT result = call;                                                 \
     if(result == TRACT_RESULT_KO) {                                             \
@@ -986,19 +988,14 @@ onnx_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model
             if (!new_input_names) return;
             new_input_names[0] = strdup("input_ids");
             if (number_inputs_llm == 3) {
-                if (strstr(model_name, "albert") != NULL) {
+                if (strstr(model_name, "bert") != NULL) {
                     new_input_names[2] = strdup("token_type_ids");
                 } else {
                     new_input_names[2] = strdup("position_ids");
                 }
                 new_input_names[1] = strdup("attention_mask");
             } else if (number_inputs_llm == 2) {
-                if (strstr(model_name, "minimal_albert") != NULL) {
-                    new_input_names[0] = strdup("input_ids1");
-                    new_input_names[1] = strdup("input_ids2");
-                } else {
-                    new_input_names[1] = strdup("attention_mask");
-                }
+                new_input_names[1] = strdup("attention_mask");
             }
             new_input_names[number_inputs_llm] = NULL;
             o_io_first.output_names_length = number_inputs_llm;
@@ -1065,7 +1062,7 @@ load_model_to_memory(char **names, int model_count, int number_inputs_llm, opera
     operator_node *previous = NULL, *curr_node = NULL, *head = NULL;
 
     int is_llm = (strstr(names[0], "model.onnx_data") != NULL) || 
-                 (strstr(names[0], "albert") != NULL) || 
+                 (strstr(names[0], "bert") != NULL) || 
                  (strstr(names[0], "gpt") != NULL) ||
                  (strstr(names[0], "pythia") != NULL) ||
                  (strstr(names[0], "llama") != NULL) || 
@@ -1252,23 +1249,38 @@ size_of_file(FILE *fd)
     return (int)size;
 }
 
+FILE *opening_file(char *argument) {
+    FILE *fd = fopen(argument, "rb");
+    fprintf(stderr, "Input: %s\n", argument);
+    if (!fd) return NULL;
+    return fd;
+}
+
 int
 main(int argc, char **argv)
 {
     struct timeval t1_inf, t2_inf;
     double elapsed_time;
 
+#if NUM_TOKENS == 0
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <path_to_dir/path_to_file> <input1.pb> ... <inputN.pb>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_DNNs> <input1.pb> ... <inputN.pb>\n", argv[0]);
         return 1;
     }
+#else
+    if (argc != 6) {
+        fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_LLMs> <tokenizer.json> <path_to_ner_model_file> <ner_tokenizer.json> <prompt.txt>\n", argv[0]);
+        return 1;
+    }
+#endif
 
-    int num_models = 0;
-    char **filenames = NULL;
-    const char *path_or_file = argv[1];
+    int num_models = 0, num_ner_models = 0;
+    char **filenames = NULL, **ner_filenames = NULL;
+    const char *path_or_file = argv[1], *onnx_file = argv[3];
     struct stat path_stat;
     uint8_t *tokenizer = NULL; 
-    int tokenizer_size = 0;
+    char *prompt = NULL; 
+    int tokenizer_size = 0, prompt_size = 0;
 
     if (stat(path_or_file, &path_stat) != 0) {
         perror("stat");
@@ -1283,27 +1295,34 @@ main(int argc, char **argv)
         fprintf(stderr, "The path is neither a valid directory nor an ONNX file.\n");
         return EXIT_FAILURE;
     }
+    num_ner_models = process_file(onnx_file, &ner_filenames);
 
     input_info *input_info_ptr = malloc(sizeof(input_info));
     input_info_ptr->input_values = NULL;
     input_info_ptr->input_shapefacts = NULL;
     input_info_ptr->input_datum_types = NULL;
-    char *model_name = filenames[0];
+    char *model_name = filenames[0], *ner_tokenizer_path = NULL;
     ModelType type = MODEL_TYPE_CNN;
-    void *tokenizer_ptr = NULL;
+    void *tokenizer_ptr;
 
     int number_inputs_llm = 0;
     if (strstr(argv[2], "tokenizer.json") != NULL) {
         type = MODEL_TYPE_LLM;
-        FILE *fd = fopen(argv[2], "rb");
-        fprintf(stderr, "Input: %s\n", argv[2]);
-        if (!fd) {
-            fprintf(stderr, "Error opening input file\n");
+
+        FILE *fd_tokenizer = opening_file(argv[2]);
+        ner_tokenizer_path = argv[4];
+        FILE *fd_prompt = opening_file(argv[5]);
+        if (!fd_tokenizer || !fd_prompt) {
+            fprintf(stderr, "Error opening tokenizer or prompt\n");
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
                 free(filenames[i]);
             }
             free(filenames);
+            for (int i = 0; i < num_ner_models; i++) {
+                free(ner_filenames[i]);
+            }
+            free(ner_filenames);
             return 1;
         }
 
@@ -1314,28 +1333,40 @@ main(int argc, char **argv)
             }
         }
 
-        tokenizer_size = size_of_file(fd);
-        if (tokenizer_size < 0) {
+        tokenizer_size = size_of_file(fd_tokenizer);
+        prompt_size = size_of_file(fd_prompt);
+        if (tokenizer_size < 0 || prompt_size < 0) {
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
                 free(filenames[i]);
             }
             free(filenames);
+            for (int i = 0; i < num_ner_models; i++) {
+                free(ner_filenames[i]);
+            }
+            free(ner_filenames);
             return 1;
         }
-        rewind(fd);
+        rewind(fd_tokenizer);
+        rewind(fd_prompt);
 
-        tokenizer = (uint8_t *)assign_into_array(fd, tokenizer_size, sizeof(uint8_t));
-        if (!tokenizer) {
+        tokenizer = (uint8_t *)assign_into_array(fd_tokenizer, tokenizer_size, sizeof(uint8_t));
+        prompt = (char *)assign_into_array(fd_prompt, prompt_size, sizeof(char));
+        if (!tokenizer || !prompt) {
             fprintf(stderr, "Error assigning image to array\n");
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
                 free(filenames[i]);
             }
             free(filenames);
+            for (int i = 0; i < num_ner_models; i++) {
+                free(ner_filenames[i]);
+            }
+            free(ner_filenames);
             return 1;
         }
-        fclose(fd);
+        fclose(fd_tokenizer);
+        fclose(fd_prompt);
 
 
         check(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr));
@@ -1349,23 +1380,30 @@ main(int argc, char **argv)
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
         
-        char *prompt = NULL;
-        if (strstr(model_name, "albert") != NULL) {
-            prompt = "Paris is the [MASK] of France.";
-        } else if (strstr(model_name, "teeny-tiny-llama") != NULL) {
-            prompt = "Olá, como você está hoje?";
-        } else {
-            prompt = "Hi, how are you today?";
+        if (tract_value_from_bytes_llm(tokenizer_ptr, prompt, ner_filenames[0], ner_tokenizer_path, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm) == TRACT_RESULT_KO) {
+            free(input_info_ptr->input_values);
+            free(input_info_ptr->input_shapefacts);
+            free(input_info_ptr->input_datum_types);
+            free(input_info_ptr);
+            for (int i = 0; i < num_models; i++) {
+                free(filenames[i]);
+            }
+            free(filenames);
+            for (int i = 0; i < num_ner_models; i++) {
+                free(ner_filenames[i]);
+            }
+            free(ner_filenames);
+            check(tract_free_tokenizer(&tokenizer_ptr));
+            free(prompt);
+            return 1;
         }
-        
-        check(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm));
+        free(prompt);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
     } else {
         input_info_ptr->input_values = malloc((argc - 1) * sizeof(void *));
         for (int i = 2; i < argc; i++) {
-            FILE *fd = fopen(argv[i], "rb");
-            fprintf(stderr, "Input: %s\n", argv[i]);
+            FILE *fd = opening_file(argv[i]);
             if (!fd) {
                 fprintf(stderr, "Error opening input file\n");
                 free(input_info_ptr);
@@ -1373,6 +1411,10 @@ main(int argc, char **argv)
                     free(filenames[i]);
                 }
                 free(filenames);
+                for (int i = 0; i < num_ner_models; i++) {
+                    free(ner_filenames[i]);
+                }
+                free(ner_filenames);
                 return 1;
             }
 
@@ -1407,7 +1449,7 @@ main(int argc, char **argv)
 #endif
 
     int is_llm = (strstr(model_name, "model.onnx_data") != NULL) || 
-                 (strstr(model_name, "albert") != NULL) || 
+                 (strstr(model_name, "bert") != NULL) || 
                  (strstr(model_name, "gpt") != NULL) ||
                  (strstr(model_name, "pythia") != NULL) ||
                  (strstr(model_name, "qwen") != NULL) || 
@@ -1441,7 +1483,7 @@ main(int argc, char **argv)
                 fprintf(stderr, "%s\nNext_token_id: %ld\n", inference, next_token_id);
                 tract_free_cstring(inference);
                 
-                if (NUM_TOKENS > 1 && is_llm && strstr(model_name, "albert") == NULL) {
+                if (NUM_TOKENS > 1 && is_llm && strstr(model_name, "bert") == NULL) {
                     check(tract_update_input_values_llm(input_info_ptr->input_values, num_inputs, next_token_id));
                 }
                 free_operator_node_output(head, type);
@@ -1479,6 +1521,10 @@ main(int argc, char **argv)
         free(filenames[i]);
     }
     free(filenames);
+    for (int i = 0; i < num_ner_models; i++) {
+        free(ner_filenames[i]);
+    }
+    free(ner_filenames);
     if (tokenizer_ptr) check(tract_free_tokenizer(&tokenizer_ptr));
     
     return 0;
