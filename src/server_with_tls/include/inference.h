@@ -23,19 +23,20 @@
 } while (0)
 
 #if USE_AES
+    void load_ner_model_to_memory(char *ner_model_name, uint8_t *ner_model,int ner_model_size, char *ner_tokenizer_name, uint8_t *ner_tokenizer, int ner_tokenizer_size);
     void load_model_to_memory(model **m, unsigned char **tags, int count_tags);
     #if USE_MEMORY_ONLY
         void run_inference_cnn(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
         void run_inference_llm(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
-        char *inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m);
+        char *inference_memory_only(float **images, int num_images, char *prompt, model *m);
     #else
         void run_inference_cnn(operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
         void run_inference_llm(operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
-        char *inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags);
+        char *inference_aes(float **images, int num_images, char *prompt, model *m, unsigned char **tags, int count_tags);
     #endif
 #else
     void load_model_to_memory(model **m);
     void run_inference_cnn(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
     void run_inference_llm(operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
-    char *inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m);
+    char *inference_no_aes(float **images, int num_images, char *prompt, model *m);
 #endif

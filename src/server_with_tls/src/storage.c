@@ -240,6 +240,7 @@ deallocate_model(model *current)
     model_type = MODEL_TYPE_LLM;
 #endif
     if (current->inference_models_ptr) free_inference_models_ptr(current->inference_models_ptr, current->size + 1, model_type);
+    if (current->tokenizer_ptr) tract_free_tokenizer((void **)&current->tokenizer_ptr);
     free_operator_node(current->head);
     free(current);
 }
@@ -329,6 +330,11 @@ print_models(model *m, int index)
 #endif
         } else {
             fprintf(stderr, ",\n   InferenceModelPtr: (null)");
+        }
+        if (current->tokenizer_ptr) {
+            fprintf(stderr, ",\n   Tokenizer_ptr: (not null)");
+        } else {
+            fprintf(stderr, ",\n   Tokenizer_ptr: (null)");
         }
         if (current->head) {
             fprintf(stderr, ",\n   operator_node: (not null)");

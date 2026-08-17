@@ -76,7 +76,7 @@ def client_side(partition_folder, unique_id):
 
     print("In hereeee")
 
-    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {input_file}"
+    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {inferONNX_path}/src/server_with_tls/scripts/prompt.txt"
     run_command_without_output(command)
     close_connection()
 

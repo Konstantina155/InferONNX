@@ -213,6 +213,13 @@ onnx_model_for_path(char *model_name, void **inference_model_ptr, ModelType mode
 }
 
 void
+load_ner_model_to_memory(char *ner_model_name, uint8_t *ner_model, int ner_model_size, char *ner_tokenizer_name, uint8_t *ner_tokenizer, int ner_tokenizer_size)
+{
+    check(tract_load_ner_model_into_memory(ner_model_name, ner_model, ner_model_size, ner_tokenizer_name, ner_tokenizer, ner_tokenizer_size));
+}
+
+
+void
 load_model_to_memory(model **m, unsigned char **tags, int count_tags)
 {
     if (!m) return;
@@ -1008,7 +1015,7 @@ execute_tree(operator_node *node, input_info *input_info_ptr, double *elapsed_ti
 
 #ifndef USE_AES
 char *
-inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m)
+inference_no_aes(float **images, int num_images, char *prompt, model *m)
 {
     struct timeval t1_inf, t2_inf;
     double elapsed_time;
@@ -1029,17 +1036,13 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
     input_info_ptr->input_values = NULL;
     input_info_ptr->input_shapefacts = NULL;
     input_info_ptr->input_datum_types = NULL;
-    void *tokenizer_ptr = NULL;
     char *model_name = m->names[0];
 
     int model_count = get_array_size((void **)m->names);
     fprintf(stderr, "Model count: %d\n", model_count);
     int number_inputs_llm = 3; 
 
-    if (!images && tokenizer_size > 0) {
-        check_ret(tract_create_tokenizer(*tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
-        free(*tokenizer);
-
+    if (!images && m->tokenizer_ptr) {
         for (int i = 0; i < model_count; ++i) {
             if (strstr(m->names[i], "model.onnx_data") == NULL) {
                 model_name = m->names[i];
@@ -1056,8 +1059,7 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
 
-        char *prompt = "Hi, how are you today?";
-        check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
+        check_ret(tract_value_from_bytes_llm(m->tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
     } else {
@@ -1129,7 +1131,7 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
         reset_node_visibility(m->head);
 
     #if NUM_TOKENS != 0
-        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
+        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, m->tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
         if (strstr(model_name, "albert") == NULL) {
             check_ret(tract_update_input_values_llm(input_info_ptr->input_values, number_inputs_llm, next_token_id), NULL);
         }
@@ -1176,7 +1178,6 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
     }
 
     #if NUM_TOKENS != 0
-        check_ret(tract_free_tokenizer(&tokenizer_ptr), NULL);
         snprintf(prediction, SMALL_SIZE, "Model %s, %s!", m->names[model_count-1], generated_text);
         tract_free_cstring(generated_text);
     #else
@@ -1190,7 +1191,7 @@ inference_no_aes(float **images, int num_images, uint8_t **tokenizer, int tokeni
 
 #ifdef USE_MEMORY_ONLY
 char *
-inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m)
+inference_memory_only(float **images, int num_images, char *prompt, model *m)
 {
 
 #ifdef USE_SYS_TIME
@@ -1223,17 +1224,13 @@ inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int t
     input_info_ptr->input_values = NULL;
     input_info_ptr->input_shapefacts = NULL;
     input_info_ptr->input_datum_types = NULL;
-    void *tokenizer_ptr = NULL;
     char *model_name = m->names[0];
 
     int model_count = get_array_size((void **)m->names);
     fprintf(stderr, "Model count: %d\n", model_count);
     int number_inputs_llm = 3;
 
-    if (!images && tokenizer_size > 0) {
-        check_ret(tract_create_tokenizer(*tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
-        free(*tokenizer);
-
+    if (!images && m->tokenizer_ptr) {
         for (int i = 0; i < model_count; ++i) {
             if (strstr(m->names[i], "model.onnx_data") == NULL) {
                 model_name = m->names[i];
@@ -1250,8 +1247,7 @@ inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int t
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
 
-        char *prompt = "Hi, how are you today?";
-        check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
+        check_ret(tract_value_from_bytes_llm(m->tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
     } else {
@@ -1310,7 +1306,7 @@ inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int t
         reset_node_visibility(m->head);
 
     #if NUM_TOKENS != 0
-        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
+        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, m->tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
         if (strstr(model_name, "albert") == NULL) {
             check_ret(tract_update_input_values_llm(input_info_ptr->input_values, number_inputs_llm, next_token_id), NULL);
         }
@@ -1345,7 +1341,6 @@ inference_memory_only(float **images, int num_images, uint8_t **tokenizer, int t
     }
 
     #if NUM_TOKENS != 0
-        check_ret(tract_free_tokenizer(&tokenizer_ptr), NULL);
         snprintf(prediction, SMALL_SIZE, "Model %s, %s!", m->names[model_count-1], generated_text);
         tract_free_cstring(generated_text);
     #else
@@ -1680,7 +1675,7 @@ execute_tree(operator_node *node, input_info *input_info_ptr, double *elapsed_ti
 }
 
 char *
-inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer_size, model *m, unsigned char **tags, int count_tags)
+inference_aes(float **images, int num_images, char *prompt, model *m, unsigned char **tags, int count_tags)
 {
 #ifdef USE_SYS_TIME
     struct timeval t1_inf, t2_inf;
@@ -1705,7 +1700,6 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
     input_info_ptr->input_values = NULL;
     input_info_ptr->input_shapefacts = NULL;
     input_info_ptr->input_datum_types = NULL;
-    void *tokenizer_ptr = NULL;
     char *model_name = m->names[0];
 
     int model_count = get_array_size((void **)m->names);
@@ -1766,10 +1760,7 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
     #endif
 
     int number_inputs_llm = 3;
-    if (!images && tokenizer_size > 0) {
-        check_ret(tract_create_tokenizer(*tokenizer, tokenizer_size, &tokenizer_ptr), NULL);
-        free(*tokenizer);
-
+    if (!images && m->tokenizer_ptr) {
         if ((model_count == 1 && strstr(m->names[0], "gpt2") != NULL) || 
             (model_count == 2 && strstr(m->names[1], "gpt2") != NULL)) {
             number_inputs_llm = 2;
@@ -1780,9 +1771,7 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
 
-        char *prompt = "Hi, how are you today?";
-
-        check_ret(tract_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
+        check_ret(tract_value_from_bytes_llm(m->tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm), NULL);
         input_info_ptr->input_values[number_inputs_llm] = NULL;
         input_info_ptr->input_datum_types[number_inputs_llm] = NULL;
     } else {
@@ -1842,7 +1831,7 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
         reset_node_visibility(m->head);
 
     #if NUM_TOKENS != 0
-        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
+        check_ret(tract_generate_text_llm(input_info_ptr->input_values, number_inputs_llm, m->tokenizer_ptr, last_node->outputs, last_node->num_outputs, &generated_text, &next_token_id), NULL);
         if (strstr(model_name, "albert") == NULL) {
             check_ret(tract_update_input_values_llm(input_info_ptr->input_values, number_inputs_llm, next_token_id), NULL);
         }
@@ -1877,7 +1866,6 @@ inference_aes(float **images, int num_images, uint8_t **tokenizer, int tokenizer
     }
 
     #if NUM_TOKENS != 0
-        check_ret(tract_free_tokenizer(&tokenizer_ptr), NULL);
         snprintf(prediction, SMALL_SIZE, "Model %s, %s!", m->names[model_count-1], generated_text);
         tract_free_cstring(generated_text);
     #else

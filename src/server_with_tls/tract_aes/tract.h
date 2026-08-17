@@ -189,6 +189,13 @@ enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
 
 enum TRACT_RESULT tract_free_tokenizer(void **tokenizer_ptr);
 
+enum TRACT_RESULT tract_load_ner_model_into_memory(const char *model_name,
+                                                   const uint8_t *model_bytes,
+                                                   uintptr_t model_len,
+                                                   const char *tokenizer_name,
+                                                   const uint8_t *tokenizer_bytes,
+                                                   uintptr_t tokenizer_len);
+
 enum TRACT_RESULT tract_value_from_bytes_llm(void *tokenizer_ptr,
                                              const char *prompt,
                                              void **input_values,

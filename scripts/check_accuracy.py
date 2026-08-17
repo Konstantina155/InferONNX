@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 def run_inference(directory, test_path):
-    command = f"./standalone_inference {directory} {test_path}"
+    command = f"env ORT_DYLIB_PATH={home_directory}/onnxruntime-linux-x64-1.28.0/lib/libonnxruntime.so ./standalone_inference {directory} {test_path} ../../../models/distilbert-base-finetuned/model.onnx ../../../models/distilbert-base-finetuned/tokenizer.json prompt.txt"
     try:
         output = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, out_stderr = output.communicate()
@@ -37,6 +37,8 @@ def main():
         print("Usage: python3 check_accuracy.py <inter_partitions_folder> <intra_partitions_folder> <num_tokens>")
         exit(1)
 
+    global home_directory
+    home_directory = os.path.expanduser("~")
     path = ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"]
     partitions_inter = sys.argv[1]
     partitions_intra = sys.argv[2]

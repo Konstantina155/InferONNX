@@ -42,8 +42,15 @@ typedef struct __attribute__((packed)) {
     uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
+    char *prompt;
     uint64_t tokenizer_size;
-    uint8_t *tokenizer; 
+    uint8_t *tokenizer;
+    char *ner_model_name;
+    uint64_t ner_model_size;
+    uint8_t *ner_model;
+    char *ner_tokenizer_name;
+    uint64_t ner_tokenizer_size;
+    uint8_t *ner_tokenizer;
 } request;
 
 typedef struct encrypted_models_info
@@ -100,7 +107,8 @@ typedef struct model
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
-    void **inference_models_ptr;   
+    void **inference_models_ptr;
+    void *tokenizer_ptr;
     operator_node *head;
     struct model *next;
 } model;

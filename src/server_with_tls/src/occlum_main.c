@@ -398,6 +398,40 @@ deserialize_client_request(const char* buf, request* req)
         memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
         offset += sizeof(uint64_t);
         req->tokenizer = NULL;
+
+        // Char * field -> ner_model_name
+        req->ner_model_name = strdup(buf + offset);
+        offset += strlen(buf + offset) + 1;
+
+        // Uint64_t field -> ner_model_size
+        memcpy(&req->ner_model_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+
+        // Uint8_t* field -> tokenizer
+        if (req->ner_model_size > 0) {
+            req->ner_model = malloc(req->ner_model_size * sizeof(uint8_t));
+            memcpy(req->ner_model, buf + offset, req->ner_model_size * sizeof(uint8_t));
+            offset += req->ner_model_size * sizeof(uint8_t);
+        } else {
+            req->ner_model = NULL;
+        }
+
+        // Char * field -> ner_tokenizer_name
+        req->ner_tokenizer_name = strdup(buf + offset);
+        offset += strlen(buf + offset) + 1;
+
+        // Uint64_t field -> ner_tokenizer_size
+        memcpy(&req->ner_tokenizer_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+
+        // Uint8_t* field -> tokenizer
+        if (req->ner_tokenizer_size > 0) {
+            req->ner_tokenizer = malloc(req->ner_tokenizer_size * sizeof(uint8_t));
+            memcpy(req->ner_tokenizer, buf + offset, req->ner_tokenizer_size * sizeof(uint8_t));
+            offset += req->ner_tokenizer_size * sizeof(uint8_t);
+        } else {
+            req->ner_tokenizer = NULL;
+        }
     } else {
         // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
@@ -439,7 +473,14 @@ deserialize_client_request(const char* buf, request* req)
         req->size_models = NULL;
         req->models = NULL;
         req->num_models = 0;
+        req->ner_model_name = NULL;
+        req->ner_model_size = 0;
+        req->ner_model = NULL;
+        req->ner_tokenizer_name = NULL;
+        req->ner_tokenizer_size = 0;
+        req->ner_tokenizer = NULL;
 
+        // Uint64_t field -> tokenizer_size
         memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
         offset += sizeof(uint64_t);
 
@@ -487,6 +528,18 @@ free_request(request *req_original)
         }
         free(req_original->input);
     }
+    if (req_original->ner_model_name != NULL) { 
+        free(req_original->ner_model_name);
+    }
+    if (req_original->ner_model != NULL) { 
+        free(req_original->ner_model);
+    }
+    if (req_original->ner_tokenizer_name != NULL) { 
+        free(req_original->ner_tokenizer_name);
+    }
+    if (req_original->ner_tokenizer != NULL) { 
+        free(req_original->ner_tokenizer);
+    }
 #if NUM_TOKENS > 0        
         tract_free_onig();
 #endif
@@ -511,6 +564,12 @@ handle_request(char *client_request, onnx_table *table)
     unsigned char **tags = req_copy.tags;
     uint64_t tokenizer_size = req_copy.tokenizer_size;
     uint8_t* tokenizer = req_copy.tokenizer;
+    char *ner_model_name = req_copy.ner_model_name;
+    uint64_t ner_model_size = req_copy.ner_model_size;
+    uint8_t *ner_model = req_copy.ner_model;
+    char *ner_tokenizer_name = req_copy.ner_tokenizer_name;
+    uint64_t ner_tokenizer_size = req_copy.ner_tokenizer_size;
+    uint8_t *ner_tokenizer = req_copy.ner_tokenizer;
 
     int size = 0;
     client_result *c_l = initialize_client_result();
@@ -526,6 +585,16 @@ handle_request(char *client_request, onnx_table *table)
         fprintf(stderr, "MODEL SIZE: %ld\n", size_models[0]);
 
         names = add_path_to_names(names, num_models);
+
+        if (ner_model_name != NULL) {
+            fprintf(stderr, "Model size: %ld, model name: %s, tok size: %ld, tok name: %s", ner_model_size, ner_model_name, ner_tokenizer_size, ner_tokenizer_name);
+            if (ner_model_size == 0) { fprintf(stderr, "[ERROR] 1\n"); }
+            if (ner_tokenizer_size == 0) { fprintf(stderr, "[ERROR] 2\n"); }
+            if (ner_tokenizer_name == NULL) { fprintf(stderr, "[ERROR] 3\n"); }
+            if (ner_model == NULL) { fprintf(stderr, "[ERROR] 4\n"); }
+            if (ner_tokenizer == NULL) { fprintf(stderr, "[ERROR] 5\n"); }
+            load_ner_model_to_memory(ner_model_name, ner_model, ner_model_size, ner_tokenizer_name, ner_tokenizer, ner_tokenizer_size);
+        }
 
         if (find_duplicate_names_from_id(table, names)) {
             char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
@@ -986,7 +1055,7 @@ reset:
         }
         fprintf(stderr, "Bytes received: %d\n Message from client: %ld\n", ret, request_size);
 
-        if (ret == 3 && request_size == 24) {
+        if (ret == 3 && request_size == 40) {
             fprintf(stderr, "Client wants to close the connection...\n");
             free_onnx_table(table);
             ret = 0;

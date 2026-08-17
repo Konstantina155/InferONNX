@@ -54,6 +54,8 @@ def client_side(unique_id):
     if "on_disk" in configuration:
         run_command("sudo sysctl -w vm.drop_caches=3")
 
+    if is_llm and "tls" in configuration:
+        input_file = f"{inferONNX_path}/src/server_with_tls/scripts/prompt.txt"
     command = f"{client_command} inputs 1 {input_file}"
     run_command_without_output(command)
     close_connection()

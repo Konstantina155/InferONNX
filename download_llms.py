@@ -6,6 +6,7 @@ from huggingface_hub import hf_hub_download
 from optimum.exporters.onnx import main_export
 from transformers import GPT2Tokenizer, LlamaTokenizerFast
 
+# Download repo of onnxruntime in HOME_DIR for the NER feature
 # Okay with qwen and mistral
 
 login(token="your_hf_token_here")
