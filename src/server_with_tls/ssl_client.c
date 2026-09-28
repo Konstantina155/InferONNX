@@ -34,6 +34,7 @@ typedef struct __attribute__((packed)) {
     int id;
     int num_models;
     int num_inputs;
+    int num_inputs_ner;
     char **names;
     uint64_t *size_models;
     uint8_t **models;
@@ -43,12 +44,12 @@ typedef struct __attribute__((packed)) {
     char *prompt;
     uint64_t tokenizer_size;
     uint8_t *tokenizer;
-    char *ner_model_name;
     uint64_t ner_model_size;
     uint8_t *ner_model;
-    char *ner_tokenizer_name;
     uint64_t ner_tokenizer_size;
     uint8_t *ner_tokenizer;
+    uint64_t ner_config_size;
+    uint8_t *ner_config;
 } request;
 
 /* HELPER FUNCTIONS */
@@ -160,12 +161,19 @@ add_shape_to_array(float *image, size_t *shape)
 static void *
 assign_into_array(FILE *fd, int size, int element_size)
 {
-    void *data = malloc(size * element_size);
+    int count = 0;
+    if (element_size == sizeof(char)) {
+        count = 1;
+    }
+    void *data = malloc(size * element_size + count);
     if (!data) {
         fprintf(stderr, "Error allocating memory for file data\n");
         return NULL;
     }
     assert(fread(data, element_size, size, fd) == (size_t)size);
+    if (element_size == sizeof(char)) {
+        ((char *)data)[size * element_size] = '\0';
+    }
     return data;
 }
 
@@ -187,8 +195,8 @@ calculate_buffer_size(const request* req)
 {
     size_t bytes = 0;
 
-    // Int field -> command + id + num_models + num_inputs
-    bytes += 4 * sizeof(int);
+    // Int field -> command + id + num_models + num_inputs + num_inputs_ner
+    bytes += 5 * sizeof(int);
 
     int size = req->num_models;
     int num_inputs = req->num_inputs;
@@ -234,22 +242,17 @@ calculate_buffer_size(const request* req)
         }
     }
 
+    // Char* prompt field
+    if (req->prompt != NULL) {
+        bytes += strlen(req->prompt) + 1;
+    }
+
     // Uint64_t field -> tokenizer_size
     bytes += sizeof(uint64_t);
     
     // Uint8_t* tokenizer field
     if (req->tokenizer != NULL && req->tokenizer_size > 0) {
         bytes += req->tokenizer_size * sizeof(uint8_t);
-    }
-
-    // Char* prompt field
-    if (req->prompt != NULL) {
-        bytes += strlen(req->prompt) + 1;
-    }
-
-    // Char* ner_model_name field
-    if (req->ner_model_name != NULL) {
-        bytes += strlen(req->ner_model_name) + 1;
     }
 
     // Uint64_t field -> ner_model_size
@@ -260,17 +263,20 @@ calculate_buffer_size(const request* req)
         bytes += req->ner_model_size * sizeof(uint8_t);
     }
 
-    // Char* ner_tokenizer_name field
-    if (req->ner_tokenizer_name != NULL) {
-        bytes += strlen(req->ner_tokenizer_name) + 1;
-    }
-
     // Uint64_t field -> ner_tokenizer_size
     bytes += sizeof(uint64_t);
 
     // Uint8_t* ner_tokenizer field
     if (req->ner_tokenizer != NULL && req->ner_tokenizer_size > 0) {
         bytes += req->ner_tokenizer_size * sizeof(uint8_t);
+    }
+
+    // Uint64_t field -> ner_config_size
+    bytes += sizeof(uint64_t);
+    
+    // Uint8_t* ner_config field
+    if (req->ner_config != NULL && req->ner_config_size > 0) {
+        bytes += req->ner_config_size * sizeof(uint8_t);
     }
 
     return bytes;
@@ -283,7 +289,7 @@ serialize_client_request(const request* req, ssize_t buffer_len)
     assert(buffer);
     size_t bytes = 0;
 
-    // Int field -> command + id + num_models + num_inputs
+    // Int field -> command + id + num_models + num_inputs + num_inputs_ner
     memcpy(buffer + bytes, &req->command, sizeof(int));
     bytes += sizeof(int);
     memcpy(buffer + bytes, &req->id, sizeof(int));
@@ -291,6 +297,8 @@ serialize_client_request(const request* req, ssize_t buffer_len)
     memcpy(buffer + bytes, &req->num_models, sizeof(int));
     bytes += sizeof(int);
     memcpy(buffer + bytes, &req->num_inputs, sizeof(int));
+    bytes += sizeof(int);
+    memcpy(buffer + bytes, &req->num_inputs_ner, sizeof(int));
     bytes += sizeof(int);
 
     int size = req->num_models;
@@ -360,12 +368,6 @@ serialize_client_request(const request* req, ssize_t buffer_len)
         bytes += req->tokenizer_size * sizeof(uint8_t);
     }
 
-    // Char* field -> ner_model_name
-    if (req->ner_model_name != NULL) {
-        strcpy(buffer + bytes, req->ner_model_name);
-        bytes += strlen(req->ner_model_name) + 1;
-    }
-
     // Uint64_t field -> ner_model_size
     memcpy(buffer + bytes, &req->ner_model_size, sizeof(uint64_t));
     bytes += sizeof(uint64_t);
@@ -376,12 +378,6 @@ serialize_client_request(const request* req, ssize_t buffer_len)
         bytes += req->ner_model_size * sizeof(uint8_t);
     }
 
-    // Char* field -> ner_tokenizer_name
-    if (req->ner_tokenizer_name != NULL) {
-        strcpy(buffer + bytes, req->ner_tokenizer_name);
-        bytes += strlen(req->ner_tokenizer_name) + 1;
-    }
-
     // Uint64_t field -> ner_tokenizer_size
     memcpy(buffer + bytes, &req->ner_tokenizer_size, sizeof(uint64_t));
     bytes += sizeof(uint64_t);
@@ -390,6 +386,16 @@ serialize_client_request(const request* req, ssize_t buffer_len)
     if (req->ner_tokenizer != NULL && req->ner_tokenizer_size > 0) {
         memcpy(buffer + bytes, req->ner_tokenizer, req->ner_tokenizer_size * sizeof(uint8_t));
         bytes += req->ner_tokenizer_size * sizeof(uint8_t);
+    }
+
+    // Uint64_t field -> ner_config_size
+    memcpy(buffer + bytes, &req->ner_config_size, sizeof(uint64_t));
+    bytes += sizeof(uint64_t);
+
+    // Uint8_t* field -> ner_config
+    if (req->ner_config != NULL && req->ner_config_size > 0) {
+        memcpy(buffer + bytes, req->ner_config, req->ner_config_size * sizeof(uint8_t));
+        bytes += req->ner_config_size * sizeof(uint8_t);
     }
 
     return buffer;
@@ -431,17 +437,14 @@ free_request(request *req_original)
     if (req_original->tokenizer != NULL) {
         free(req_original->tokenizer);
     }
-    if (req_original->ner_model_name != NULL) { 
-        free(req_original->ner_model_name);
-    }
     if (req_original->ner_model != NULL) { 
         free(req_original->ner_model);
     }
-    if (req_original->ner_tokenizer_name != NULL) { 
-        free(req_original->ner_tokenizer_name);
-    }
     if (req_original->ner_tokenizer != NULL) { 
         free(req_original->ner_tokenizer);
+    }
+    if (req_original->ner_config != NULL) { 
+        free(req_original->ner_config);
     }
 }
 
@@ -860,7 +863,7 @@ filter_dir(const char *dir_path, const char *name)
 }
 
 void
-send_models(char **input_files, struct dirent **namelist, const char *dir_path, int num_models, char* ner_tokenizer_name, char* ner_model_name)
+send_models(char **input_files, struct dirent **namelist, const char *dir_path, int num_models, char *ner_config_path, char* ner_tokenizer_path, char* ner_model_path)
 {
     assert(namelist);
     assert(input_files);
@@ -871,17 +874,14 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     int temp_calculated_shape = 0;
     size_t *temp_shape = NULL;
 
-    if (ner_model_name != NULL) {        
-        req_original.ner_tokenizer_name = strdup(ner_tokenizer_name);
-        assert(req_original.ner_tokenizer_name);
-
-        FILE *fd = open_model_input(ner_tokenizer_name);
+    if (ner_model_path != NULL) {    
+       FILE *fd = open_model_input(ner_tokenizer_path);
         if (!fd) {
-            fprintf(stderr, "Error opening file %s\n", ner_tokenizer_name);
+            fprintf(stderr, "Error opening file %s\n", ner_tokenizer_path);
             return;
         }
 
-        fprintf(stderr, "Ner input: %s\n", ner_tokenizer_name);
+        fprintf(stderr, "Ner input: %s\n", ner_tokenizer_path);
         int size = size_of_file(fd);
         if (size < 0) {
             return;
@@ -895,16 +895,16 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
             return;
         }
         fclose(fd);
-        
-        req_original.ner_model_name = strdup(ner_model_name);
-        assert(req_original.ner_model_name);
 
-        char full_path[1024];
-        snprintf(full_path, sizeof(full_path), "%s", ner_model_name);
+        if ((strstr(ner_model_path, "distilbert") != NULL) || (strstr(ner_model_path, "roberta") != NULL)) {
+           req_original.num_inputs_ner = 2;
+        } else {
+           req_original.num_inputs_ner = 3;
+        }
 
-        FILE *fd1 = fopen(full_path, "rb");
+        FILE *fd1 = fopen(ner_model_path, "rb");
         if (!fd1) {
-            fprintf(stderr, "Error opening file %s\n", full_path);
+            fprintf(stderr, "Error opening file %s\n", ner_model_path);
             free_request(&req_original);
             return;
         }
@@ -917,7 +917,7 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         long size1 = ftell(fd1);
         fprintf(stderr, "Size of file: %ld\n", size1);
         if (size1 == -1) {
-            fprintf(stderr, "Error getting size of file: %s\n", full_path);
+            fprintf(stderr, "Error getting size of file: %s\n", ner_model_path);
             free_request(&req_original);
             return;
         }
@@ -940,13 +940,35 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
         }
         req_original.ner_model_size = size1;
         fclose(fd1);
+
+        FILE *fd2 = open_model_input(ner_config_path);
+        if (!fd2) {
+            fprintf(stderr, "Error opening file %s\n", ner_config_path);
+            return;
+        }
+
+        fprintf(stderr, "Ner config: %s\n", ner_config_path);
+        int size2 = size_of_file(fd2);
+        if (size2 < 0) {
+            return;
+        }
+        rewind(fd2);
+        
+        req_original.ner_config_size = size2;
+        req_original.ner_config = (uint8_t *)assign_into_array(fd2, size2, sizeof(uint8_t));
+        if (!req_original.ner_config) {
+            fprintf(stderr, "Error assigning image to array\n");
+            return;
+        }
+        fclose(fd2);
     } else {
-        req_original.ner_model_name = NULL;
+        req_original.num_inputs_ner = 0;
         req_original.ner_model_size = 0;
         req_original.ner_model = NULL;
-        req_original.ner_tokenizer_name = NULL;
         req_original.ner_tokenizer_size = 0;
         req_original.ner_tokenizer = NULL;
+        req_original.ner_config_size = 0;
+        req_original.ner_config = NULL;
     }
     req_original.prompt = NULL;
 
@@ -1180,17 +1202,18 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
     req_original.command = 1;
     req_original.id = id;
     req_original.num_models = size_tags;
+    req_original.num_inputs_ner = 0;
     req_original.names = NULL;
     req_original.size_models = NULL;
     req_original.models = NULL;
     req_original.tokenizer_size = 0;
     req_original.tokenizer = NULL;
-    req_original.ner_model_name = NULL;
     req_original.ner_model_size = 0;
     req_original.ner_model = NULL;
-    req_original.ner_tokenizer_name = NULL;
     req_original.ner_tokenizer_size = 0;
     req_original.ner_tokenizer = NULL;
+    req_original.ner_config_size = 0;
+    req_original.ner_config = NULL;
 
     if (size_tags == 0) {
         req_original.tags = NULL;
@@ -1290,6 +1313,7 @@ send_quit()
     req_original.id = -1;
     req_original.num_models = 0;
     req_original.num_inputs = 0;
+    req_original.num_inputs_ner = 0;
     req_original.names = NULL;
     req_original.size_models = NULL;
     req_original.size_inputs = NULL;
@@ -1299,12 +1323,12 @@ send_quit()
     req_original.prompt = NULL;
     req_original.tokenizer = NULL;
     req_original.tokenizer_size = 0;
-    req_original.ner_model_name = NULL;
     req_original.ner_model_size = 0;
     req_original.ner_model = NULL;
-    req_original.ner_tokenizer_name = NULL;
     req_original.ner_tokenizer_size = 0;
     req_original.ner_tokenizer = NULL;
+    req_original.ner_config_size = 0;
+    req_original.ner_config = NULL;
     size_t bufLen = calculate_buffer_size(&req_original);
     char *buffer = serialize_client_request(&req_original, bufLen);
     fprintf(stderr, "%ld", bufLen);
@@ -1401,16 +1425,16 @@ version_sort(const struct dirent **a, const struct dirent **b)
 }
 
 int
-main(int argc, char *argv[]) 
+main(int argc, char *argv[])
 {
     if (argc < 2 || (strcmp(argv[1], "models") != 0 && strcmp(argv[1], "inputs") != 0 && strcmp(argv[1], "quit") != 0)) {
-        fprintf(stderr, "Usage: %s 'inputs' <model_id> <tag_file> <model_input#1> ... <model_input#N> OR \n                    'models default' <model_input#1> ... <model_input#N> <model_path> OR\n                    'models guardrails' <ner_model_input> <ner_model_path> <model_input#1> ... <model_input#N> <model_path>\n                    'quit'\n", argv[0]);
+        fprintf(stderr, "Usage: %s 'inputs' <model_id> <tag_file> <model_input#1> ... <model_input#N> OR \n                    'models default' <model_input#1> ... <model_input#N> <model_path> OR\n                    'models guardrails' <ner_model_config> <ner_model_input> <ner_model_path> <model_input#1> ... <model_input#N> <model_path>\n                    'quit'\n", argv[0]);
         return -1;
     }
 
     if (strcmp(argv[1], "models") == 0) {
 
-        if (argc < 5 || (strcmp(argv[2], "default") != 0 && strcmp(argv[2], "guardrails") != 0)) {
+        if ((strcmp(argv[2], "default") != 0 && strcmp(argv[2], "guardrails") != 0) || (argc < 6 && strcmp(argv[2], "guardrails") == 0)) {
             fprintf(stderr, "Usage: %s 'models' 'default/guardrails' <model_input> <directory>\n", argv[0]);
             return -1;
         }
@@ -1427,9 +1451,9 @@ main(int argc, char *argv[])
         }
 
         if (strcmp(argv[2], "default") == 0) {
-            send_models(argv + 3, namelist, path, num_models, NULL, NULL);
+            send_models(argv + 3, namelist, path, num_models, NULL, NULL, NULL);
         } else {
-            send_models(argv + 5, namelist, path, num_models, argv[3], argv[4]);
+            send_models(argv + 6, namelist, path, num_models, argv[3], argv[4], argv[5]);
         }
 
         for (int i = 0; i < num_models; i++) {

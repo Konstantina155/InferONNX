@@ -6,9 +6,12 @@ USE_MEMORY_ONLY ?= 0
 USE_DEBUG ?= 0
 NUM_TOKENS ?= 10
 USE_FILE_CACHING ?= 0
+USE_PII_REGEX ?= 0
+USE_PII_GUARDRAILS ?= 0
 
 CFLAGS = -Wall -Wextra -pedantic -g -std=gnu11
 LDFLAGS = -I../include -L ../lib -lmbedtls -lmbedx509 -lmbedcrypto
+LDFLAGS += -Wl,--gc-sections #addition
 
 ifeq ($(USE_OCCLUM), 1)
 	CC = occlum-gcc
@@ -26,14 +29,18 @@ ifeq ($(USE_MEMORY_ONLY), 1)
     CFLAGS += -DUSE_MEMORY_ONLY
 endif
 ifeq ($(USE_AES), 1)
-    CFLAGS += -DUSE_AES
-endif
-ifeq ($(USE_AES), 1)
+	CFLAGS += -DUSE_AES -DUSE_PII_GUARDRAILS=$(USE_PII_GUARDRAILS)
 	LDFLAGS += -I../tract_aes -ltract -lm -lpthread -ldl
 	ifeq ($(USE_SYS_TIME_OPERATORS), 1)
 		LDFLAGS += -L../tract_aes/use_sys_time
+	endif
+	ifeq ($(USE_PII_REGEX), 1)
+		CFLAGS += -DUSE_PII_REGEX
+		LDFLAGS += -L../tract_aes/no_use_sys_time/use_pii_regex
+	else ifeq ($(USE_PII_GUARDRAILS), 0)
+		LDFLAGS += -L../tract_aes/no_use_sys_time/
 	else
-		LDFLAGS += -L../tract_aes/no_use_sys_time
+		LDFLAGS += -L../tract_aes/no_use_sys_time/no_use_pii_regex
 	endif
 else
 	LDFLAGS += -I../tract_no_aes -L../tract_no_aes -ltract -lm -lpthread -ldl

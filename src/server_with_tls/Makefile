@@ -7,10 +7,13 @@ USE_STRIP ?= 0
 USE_DEBUG ?= 0
 NUM_TOKENS ?= 10
 USE_FILE_CACHING ?= 0
+USE_PII_REGEX ?= 0
+USE_PII_GUARDRAILS ?= 0
 
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
 LDFLAGS = -I./include -L ./lib -lmbedtls -lmbedx509 -lmbedcrypto
+LDFLAGS += -Wl,--gc-sections #addition
 
 ifeq ($(USE_FILE_CACHING), 1)
 	CFLAGS += -DUSE_FILE_CACHING
@@ -33,9 +36,14 @@ ifeq ($(USE_AES), 1)
     ifeq ($(USE_SYS_TIME_OPERATORS), 1)
         CFLAGS += -DUSE_SYS_TIME_OPERATORS
     	LDFLAGS += -L./tract_aes/use_sys_time
-    else
-        LDFLAGS += -L./tract_aes/no_use_sys_time
     endif
+    ifeq ($(USE_PII_REGEX), 1)
+		LDFLAGS += -L./tract_aes/no_use_sys_time/use_pii_regex
+	else ifeq ($(USE_PII_GUARDRAILS), 0)
+		LDFLAGS += -L./tract_aes/no_use_sys_time/
+	else
+		LDFLAGS += -L./tract_aes/no_use_sys_time/no_use_pii_regex
+	endif
 else
 	LDFLAGS += -I./tract_no_aes -L./tract_no_aes -ltract -lm -lpthread
 endif

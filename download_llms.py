@@ -84,32 +84,25 @@ def export_model(model_path):
         local_dir=f"{qwen_output_dir}/test_data_set_0/" 
     )
 
-def below():
-    from optimum.onnxruntime import ORTModelForTokenClassification
-    from transformers import AutoTokenizer
-
-    # This is the industry standard NER model
-    model_id = "dslim/bert-base-NER"
-    save_dir = "./clean_bert_ner"
-
-    print("Downloading and exporting model to ONNX...")
-    model = ORTModelForTokenClassification.from_pretrained(model_id, export=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-
-    model.save_pretrained(save_dir)
-    tokenizer.save_pretrained(save_dir)
-
-    print(f"\nSUCCESS! Your files are in the '{save_dir}' folder.")
-    print(f"Model path: {save_dir}/model.onnx")
-    print(f"Tokenizer path: {save_dir}/tokenizer.json")
-
 def main():
     if len(sys.argv) != 2:
         print("python3 download_llms.py <inferONNX_path>")
         sys.exit(1)
 
     inferONNX_path = sys.argv[1]
-    model_path = inferONNX_path + "models/"
+    model_path = inferONNX_path + "models/" 
+    try:
+        path = hf_hub_download(
+            repo_id="ai4privacy/pii-masking-400k",
+            filename="data/validation/1en.jsonl",
+            repo_type="dataset",
+            local_dir=model_path,
+        )
+        print(f"Dataset downloaded to: {path}")
+
+    except Exception as e:
+        print(f"Failed to download dataset: {e}")
+        
     export_model(model_path)
 
 if __name__ == "__main__":

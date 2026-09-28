@@ -1,25 +1,31 @@
-import sys
+import os
 import re
+import csv
+import sys
+import json
+import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 
-def calculate_count(occurrence, runs):
-    return 1 if occurrence == 1 else (occurrence - 1) * runs + 1
+def calculate_count():
+    count = (occurrence - 1) * runs + 1 if runs < 6 else occurrence
+    return 1 if occurrence == 1 else count
 
 def extract_time(line, pattern):
     match = re.search(pattern, line)
     return float(match.group(1)) if match else None
 
-def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurrence):
+def parse_times(filename, num_partitions):
     inference_times = []
     run_model_times = []
     total_server_times = []
     total_client_times = []
+    guardrail_times = []
     network_times = []
     handshake = []
     handle_request = []
     partitions = [[] for _ in range(num_partitions)]
 
-    count = calculate_count(occurrence, runs)
+    count = calculate_count()
     model_match_index = 1
     run_count = 0
     minimum_stats = 4
@@ -27,18 +33,20 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
 
     is_llm = "gpt" in model_name or "llama" in model_name or "mistral" in model_name or "qwen" in model_name
     if is_llm:
+        if runs > 5: stats = runs * 2 
         if "qwen" in model_name or "split0" in model_name:
-            stats += (num_tokens * 2)
+            stats += (number_tokens * 2)
         else:
-            stats += num_tokens - 1
+            stats += number_tokens - 1
         if "inference_time_outside_occlum" not in filename:
             minimum_stats = 1
+    print(stats)
 
     with open(filename, 'r') as file:
         lines = file.readlines()
 
     for i in reversed(range(len(lines))):
-        if (f"Model: {model_name}" in lines[i] and not is_llm) or (f"Model: {model_name} for {num_tokens} tokens" in lines[i] and is_llm):
+        if (f"Model: {model_name}" in lines[i] and not is_llm) or (f"Model: {model_name} for {number_tokens} tokens" in lines[i] and is_llm):
             if count == model_match_index:
                 if lines[i+minimum_stats+1] == "\n":
                     if "Inference time to run a model:" not in lines[i+1]:
@@ -72,7 +80,12 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
 
                     if "Total time - client:" in line:
                         t = extract_time(line, r"Total time - client: ([\d\.]+) ms")
-                        if t: total_client_times.append(t); run_count += 1
+                        if t: total_client_times.append(t)
+                        if runs < 6: run_count += 1
+
+                    if "Time to run guardrail:" in line:
+                        t = extract_time(line, r"Time to run guardrail: ([\d\.]+) ms")
+                        if t is not None: guardrail_times.append(t); run_count += 1
 
                     if "Time to read request from client:" in line:
                         net = extract_time(line, r"Time to read request from client: ([\d\.]+) ms")
@@ -94,9 +107,9 @@ def parse_times(filename, model_name, num_tokens, num_partitions, runs, occurren
             else:
                 model_match_index += 1
     if run_count != runs:
-        return [], [], []
+        return [], [], [], []
     
-    return run_model_times, inference_times, total_client_times
+    return run_model_times, inference_times, total_client_times, guardrail_times
 
 def calculate_average(times, runs, tokens):
     if tokens > 0:
@@ -109,20 +122,62 @@ def convert_to_int(value):
 def convert_to_float(value):
     return float(Decimal(value).quantize(Decimal('0.1'), ROUND_HALF_UP))
 
-def print_results(num_tokens, run_model_times, inference_times, total_client_times, runs):
+def save_guardrail_info_to_csv(total_client_times, guardrail_times):
+    selected_prompts = f"./models/1en_selected_prompts.jsonl"
+    length_chars = []
+    with open(selected_prompts, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            row = json.loads(line)
+            length_chars.append(row["length_chars"])
+    
+    fieldnames = [
+        "model",
+        "guardrail",
+        "total_client_ms",
+        "guardrail_ms",
+        "length_chars"
+    ]
+
+    guardrails = {
+        5: "baseline",
+        4: "regex",
+        3: "distilbert",
+        2: "bert-base",
+        1: "bert-large"
+    }
+
+    rows = []
+
+    for i, (client_time, guardrail_time) in enumerate(zip(total_client_times, guardrail_times), start=1):
+        rows.append({
+            "Model": model_name,
+            "Guardrail": guardrails[occurrence],
+            "Total Client Time (s)": convert_to_float(client_time / 1000),
+            "Guardrail Time (s)": convert_to_float(guardrail_time / 1000),
+            "Length of prompt chars": length_chars[i - 1]
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv("results/guardrails_info.csv", mode="a", index=False, header=not os.path.exists("results/guardrails_info.csv"))
+
+def print_results(run_model_times, inference_times, total_client_times, guardrail_times):
+    if runs > 6: 
+        save_guardrail_info_to_csv(total_client_times, guardrail_times)
+        return
+
     metric = 'ms'
-    if num_tokens > 0:
+    if number_tokens > 0:
         metric = 's'
-    print(f"Number of tokens generated by the model: {num_tokens}")
-    print(f"Average inference time to run a model: {convert_to_int(calculate_average(run_model_times, runs, num_tokens))} {metric}")
-    print(f"Average inference time: {convert_to_int(calculate_average(inference_times, runs, num_tokens))} {metric}")
-    print(f"Average total client time: {convert_to_int(calculate_average(total_client_times,runs, num_tokens))} {metric}")
+    print(f"Number of tokens generated by the model: {number_tokens}")
+    print(f"Average inference time to run a model: {convert_to_int(calculate_average(run_model_times, runs, number_tokens))} {metric}")
+    print(f"Average inference time: {convert_to_int(calculate_average(inference_times, runs, number_tokens))} {metric}")
+    print(f"Average total client time: {convert_to_int(calculate_average(total_client_times,runs, number_tokens))} {metric}")
 
 def main():
     if len(sys.argv) != 7:
         print("Usage: python3 calculate_avg_time.py <file_name> <model> <number_tokens> <number_partitions> <runs> <occurrence>\n")
         sys.exit(1)
 
+    global model_name, number_tokens, runs, occurrence
     filename = sys.argv[1]
     model_name = sys.argv[2]
     number_tokens = int(sys.argv[3])
@@ -131,8 +186,8 @@ def main():
     occurrence = int(sys.argv[6])
     
 
-    run_model_times, inference_times, total_client_times = parse_times(filename, model_name, number_tokens, number_partitions, runs, occurrence)
-    print_results(number_tokens, run_model_times, inference_times, total_client_times, runs)
+    run_model_times, inference_times, total_client_times, guardrail_times = parse_times(filename, number_partitions)
+    print_results(run_model_times, inference_times, total_client_times, guardrail_times)
          
 if __name__ == "__main__":
     main()

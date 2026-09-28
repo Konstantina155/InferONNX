@@ -1,7 +1,7 @@
 #include <storage.h>
 
 //Hash table for storing the models
-// id -> model_names, key, IV, AAD, TractInferenceModels, TractLlmInferenceModel (for llm's)
+// id -> model_names, key, IV, AAD, TractInferenceModels, TractModel (for llm's)
 static unsigned int
 hash_function(const char* id)
 {
@@ -184,8 +184,8 @@ free_inference_model_ptr(void *inference_model_ptr, ModelType model_type)
             break;
         }
         case MODEL_TYPE_LLM: {
-            TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr;
-            if (tract_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+            TractModel *inference_model = (TractModel *)inference_model_ptr;
+            if (tract_nnef_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error releasing inference model\n");
                 return;
             }
@@ -240,7 +240,12 @@ deallocate_model(model *current)
     model_type = MODEL_TYPE_LLM;
 #endif
     if (current->inference_models_ptr) free_inference_models_ptr(current->inference_models_ptr, current->size + 1, model_type);
-    if (current->tokenizer_ptr) tract_free_tokenizer((void **)&current->tokenizer_ptr);
+    if (current->tokenizer_ptr) {
+        tract_free_tokenizer((void **)&current->tokenizer_ptr);
+#if USE_PII_REGEX == 0 && USE_PII_GUARDRAILS == 1
+        tract_ner_shutdown();
+#endif
+    }
     free_operator_node(current->head);
     free(current);
 }
@@ -323,13 +328,9 @@ print_models(model *m, int index)
             fprintf(stderr, "%02x", current->AAD[i]);
         }
         if (current->inference_models_ptr) {
-#if NUM_TOKENS == 0
-            fprintf(stderr, ",\n   TractInferenceModel: (not null)");
-#else
-            fprintf(stderr, ",\n   TractLlmInferenceModel: (not null)");
-#endif
+            fprintf(stderr, ",\n   TractModel: (not null)");
         } else {
-            fprintf(stderr, ",\n   InferenceModelPtr: (null)");
+            fprintf(stderr, ",\n   TractModel: (null)");
         }
         if (current->tokenizer_ptr) {
             fprintf(stderr, ",\n   Tokenizer_ptr: (not null)");
@@ -493,8 +494,6 @@ create_operator_node(char *model_name, int node_id)
     operator_node *node = (operator_node *)malloc(sizeof(operator_node));
     node->model_name = strdup(model_name);
     node->outputs = NULL;
-    node->shapefacts = NULL;
-    node->datum_types = NULL;
     node->num_inputs = -1;
     node->num_outputs = -1;
     node->num_children = 0;
@@ -643,17 +642,13 @@ free_operator_node_info(operator_node *node)
     if (strcmp(node->model_name, "input") == 0) return;
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
-            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+            if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value for llm\n");
                 return;
             }
         }
         free(node->outputs);
-        free(node->shapefacts);
-        free(node->datum_types);
         node->outputs = NULL;
-        node->shapefacts = NULL;
-        node->datum_types = NULL;
     }
 
 }
@@ -687,17 +682,13 @@ free_operator_node(operator_node *node)
                 return;
             }
 #else
-            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+            if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value\n");
                 return;
             }            
 #endif
         }
         free(node->outputs);
-        #if NUM_TOKENS != 0
-            free(node->shapefacts);
-            free(node->datum_types);
-        #endif
     }
 
     if (node->children) {

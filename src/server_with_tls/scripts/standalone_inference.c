@@ -20,7 +20,7 @@
     if(result == TRACT_RESULT_KO) {                                             \
         fprintf(stderr, "Error calling tract: %s\n", tract_get_last_error());   \
         exit(1) ;                                                               \
-    }                                                                           \
+    }                                                                     \
 }
 
 size_t
@@ -87,8 +87,8 @@ free_inference_model(void *inference_model_ptr, ModelType model_type)
             break;
         }
         case MODEL_TYPE_LLM: {
-            TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr;
-            if (tract_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+            TractLlmTypedModel *inference_model = (TractLlmTypedModel *)inference_model_ptr;
+            if (tract_nnef_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error releasing inference model\n");
                 return;
             }
@@ -248,102 +248,77 @@ run_inference_llm(operator_node **node, input_info *input_info_ptr, void *infere
 
     struct timeval t1, t2;
     double elapsed_time;
-    TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr; 
-    TractLlmTransformedModel *transformed_model = NULL;
+    int num_outputs = (*node)->num_outputs;
+    void **outputs = malloc((num_outputs + 1) * sizeof(void *));
+
+    TractModel *typed_model = (TractModel *)inference_model_ptr;
     int num_inputs_ptr = get_array_size(input_info_ptr->input_values);
     fprintf(stderr, "Num inputs ptr: %d\n", num_inputs_ptr);
 
 #ifndef USE_MEMORY_ONLY
     // Load the model
-    inference_model = NULL;
+    inference_model_ptr = NULL;
     fprintf(stderr, "Node name: %s\n", (*node)->model_name);
-    check(tract_onnx_model_for_path_llm((*node)->model_name, &inference_model));
-    assert(inference_model);
+    check(tract_nnef_model_for_path_llm((*node)->model_name, &typed_model));
+    assert(typed_model);
 #endif
-
-    int num_outputs = (*node)->num_outputs;
-    void **outputs = malloc((num_outputs + 1) * sizeof(void *));
-    void **shapefacts = malloc((num_outputs + 1) * sizeof(void *));
-    void **datum_types = malloc((num_outputs + 1) * sizeof(void *));
 
     gettimeofday(&t1, NULL);
 
     int k = 0, index = 0;
     void **inputs = malloc(((*node)->num_inputs + 1) * sizeof(void *));
-    void **input_shapefacts = malloc(((*node)->num_inputs + 1) * sizeof(void *));
-    void **input_datum_types = malloc(((*node)->num_inputs + 1) * sizeof(void *));
-
     int *indices = (*node)->parent_output_indices;
+
     fprintf(stderr, "Number of inputs: %d\n", (*node)->num_inputs);
     for (int i = 0; i < (*node)->num_inputs; i++) {
         if (!(*node)->parents || k >= (*node)->num_inputs) break;
         if (strcmp((*node)->parents[i]->model_name, "input") == 0) {
             fprintf(stderr, "Current k: %d: input_values[%d]\n", k, index);
-            inputs[k] = input_info_ptr->input_values[index];
-            input_shapefacts[k] = NULL;
-            input_datum_types[k] = input_info_ptr->input_datum_types[index];
-            index++;
-            k++;
+            inputs[k++] = input_info_ptr->input_values[index++];
             continue;
         }
         if (!(*node)->parents[i]->outputs[indices[index]]) {
             fprintf(stderr, "The output is NULL!");
             continue;
         }
-        inputs[k] = (*node)->parents[i]->outputs[indices[index]];
-        input_shapefacts[k] = (*node)->parents[i]->shapefacts[indices[index]];
-        input_datum_types[k] = (*node)->parents[i]->datum_types[indices[index]];
-        index++;
-        k++;
+        inputs[k++] = (*node)->parents[i]->outputs[indices[index++]];
     }
     if ((*node)->num_inputs == -1 || (*node)->num_parents == 0) {
         inputs = realloc(inputs, (num_inputs_ptr + 1) * sizeof(void *));
         assert(inputs);
         for (int j = 0; j < num_inputs_ptr; j++) {
-            inputs[k] = input_info_ptr->input_values[j];
-            input_shapefacts[k] = NULL;
-            input_datum_types[k] = input_info_ptr->input_datum_types[j];
-            k++;
+            inputs[k++] = input_info_ptr->input_values[j];
         }
     }
     inputs[k] = NULL;
-    input_shapefacts[k] = NULL;
     fprintf(stderr, "final k: %d\n", k);
 
-    check(tract_inference_model_into_optimized_llm(k, input_shapefacts, input_datum_types, &inference_model, &transformed_model));
-    assert(transformed_model);
+// #ifndef USE_MEMORY_ONLY
+//     check(tract_inference_model_into_optimized_llm(k, input_shapefacts, input_datum_types, &inference_model, &transformed_model));
+//     assert(transformed_model);
+//     free_inference_model(inference_model, MODEL_TYPE_LLM);
+// #endif
 
-#ifndef USE_MEMORY_ONLY
-    free_inference_model(inference_model, MODEL_TYPE_LLM);
-#endif
+    check(tract_nnef_model_into_runnable_and_run_llm(inputs, k, &typed_model, outputs));
 
-    check(tract_model_into_runnable_and_run_llm(inputs, k, &transformed_model, outputs, shapefacts, datum_types));
+    // for only run() from runnable:
+    // check(tract_runnable_run_llm(inputs, k, runnable_model, outputs));
     free(inputs);
-    free(input_shapefacts);
-    free(input_datum_types);
 
     gettimeofday(&t2, NULL);
     elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
 
     (*node)->outputs = (void **)malloc((num_outputs + 1) * sizeof(void *));
-    (*node)->shapefacts = (void **)malloc((num_outputs + 1) * sizeof(void *));
-    (*node)->datum_types = (void **)malloc((num_outputs + 1) * sizeof(void *));
     for (int i = 0; i < num_outputs; i++) {
-        if (outputs[i] == NULL || shapefacts[i] == NULL || datum_types[i] == NULL) {
-            fprintf(stderr, "Outputs or shapefacts or datum_types of %d are NULL\n", i);
+        if (outputs[i] == NULL) {
+            fprintf(stderr, "Outputs of %d are NULL\n", i);
             continue;
         }
         (*node)->outputs[i] = outputs[i];
-        (*node)->shapefacts[i] = shapefacts[i];
-        (*node)->datum_types[i] = datum_types[i];
     }
     (*node)->outputs[num_outputs] = NULL;
-    (*node)->shapefacts[num_outputs] = NULL;
-    (*node)->datum_types[num_outputs] = NULL;
     free(outputs);
-    free(shapefacts);
-    free(datum_types);
     (*node)->elapsedTime = elapsed_time;
 }
 
@@ -614,7 +589,7 @@ free_operator_node_output(operator_node *node, ModelType model_type)
                     break;
                 }
                 case MODEL_TYPE_LLM: {
-                    if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                    if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                         fprintf(stderr, "Error destroying tract value for llm\n");
                         return;
                     }
@@ -670,7 +645,7 @@ free_operator_node(operator_node *node, ModelType model_type)
                     break;
                 }
                 case MODEL_TYPE_LLM: {
-                    if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+                    if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                         fprintf(stderr, "Error destroying tract value for llm\n");
                         return;
                     }
@@ -851,7 +826,7 @@ print_operator_io(operator_io **io)
 }
 
 void *
-onnx_model_for_path(char *model_name, void **inference_model, ModelType model_type)
+nnef_model_for_path(char *model_name, void **inference_model, ModelType model_type)
 {
     switch (model_type) {
         case MODEL_TYPE_CNN: {
@@ -881,10 +856,10 @@ onnx_model_for_path(char *model_name, void **inference_model, ModelType model_ty
         }
         case MODEL_TYPE_LLM: {
             // Load the model
-            TractLlmInferenceModel *llm_inference_model = NULL;
-            if (tract_onnx_model_for_path_llm(model_name, &llm_inference_model) != TRACT_RESULT_OK) {
+            TractModel *llm_inference_model = NULL;
+            if (tract_nnef_model_for_path_llm(model_name, &llm_inference_model) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
-                check(tract_llm_inference_model_release(&llm_inference_model));
+                check(tract_nnef_llm_inference_model_release(&llm_inference_model));
                 assert(!llm_inference_model);
                 return NULL;
             }
@@ -917,18 +892,19 @@ initialize_inference_models(int num_models)
 }
 
 void
-onnx_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model_ptr, ModelType model_type, int index, operator_node *head, char *model_name)
+nnef_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model_ptr, ModelType model_type, int index, operator_node *head, char *model_name)
 {
     uintptr_t num_inputs = 0;
     uintptr_t num_outputs = 0;
     char *input_name = NULL;
     char **input_names = NULL;
     char **output_names = NULL;
-    int8_t *output_name = NULL;
+    char *output_name = NULL;
 
     if (inference_model_ptr) {
         switch (model_type) {
             case MODEL_TYPE_CNN: {
+                int8_t *output_name = NULL;
                 TractInferenceModel *cnn_inference_model = (TractInferenceModel *)inference_model_ptr;
                 check(tract_inference_model_input_count(cnn_inference_model, &num_inputs));
                 input_names = malloc((num_inputs + 1) * sizeof(char *));
@@ -951,23 +927,23 @@ onnx_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model
             }
             case MODEL_TYPE_LLM: {
                 if (!inference_model_ptr) break; 
-                TractLlmInferenceModel *llm_inference_model = (TractLlmInferenceModel *)inference_model_ptr;
-                check(tract_llm_inference_model_input_count(llm_inference_model, &num_inputs));
+                TractModel *llm_inference_model = (TractModel *)inference_model_ptr;
+                check(tract_model_input_count(llm_inference_model, &num_inputs));
                 input_names = malloc((num_inputs + 1) * sizeof(char *));
                 if (!input_names) return;
                 for (int i = 0; i < (int)num_inputs; i++) {
-                    check(tract_llm_inference_model_input_name(llm_inference_model, i, &input_name));
+                    check(tract_model_input_name(llm_inference_model, i, &input_name));
                     input_names[i] = input_name;
                 }
                 input_names[num_inputs] = NULL;
                 
 
-                check(tract_llm_inference_model_output_count(llm_inference_model, &num_outputs));
+                check(tract_model_output_count(llm_inference_model, &num_outputs));
                 output_names = malloc((num_outputs + 1) * sizeof(char *));
                 if (!output_names) return;
                 for (int i = 0; i < (int)num_outputs; i++) {
-                    check(tract_llm_inference_model_output_name(llm_inference_model, i, &output_name));
-                    output_names[i] = (char *)output_name;
+                    check(tract_model_output_label_name(llm_inference_model, i, &output_name));
+                    output_names[i] = output_name;
                 }
                 output_names[num_outputs] = NULL;
                 break;
@@ -1051,6 +1027,112 @@ onnx_model_inputs(operator_io **io, int number_inputs_llm, void *inference_model
     update_node(io, index, head);
 }
 
+void *
+onnx_model_into_runnable(void *inference_model_ptr, input_info *input_info_ptr, operator_node **node, ModelType model_type)
+{
+    assert(node);
+    if (!inference_model_ptr) return NULL;
+
+    void *runnable_model = NULL;
+    switch (model_type) {
+        case MODEL_TYPE_CNN: {
+            //Optimize the model and make it runnable
+            TractInferenceModel *cnn_inference_model = (TractInferenceModel *)inference_model_ptr;
+            TractModel *model = NULL;
+            if (tract_inference_model_into_optimized(&cnn_inference_model, &model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
+                assert(!model);
+                return NULL;
+            }
+            assert(model);
+
+            TractRunnable *cnn_runnable_model = NULL;
+            if (tract_model_into_runnable(&model, &cnn_runnable_model) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
+                //check(tract_cnn_runnable_model_release(&cnn_runnable_model));
+                assert(!cnn_runnable_model);
+                return NULL;
+            }
+            assert(cnn_runnable_model);
+            assert(!model);
+            runnable_model = (void*)cnn_runnable_model;
+            break;
+        }
+        case MODEL_TYPE_LLM: {
+            int num_inputs_ptr = get_array_size(input_info_ptr->input_datum_types);
+            fprintf(stderr, "Num inputs: %d\n", num_inputs_ptr);
+            int num_outputs = (*node)->num_outputs;
+            fprintf(stderr, "Num outputs: %d\n", num_outputs);
+            void **input_shapefacts = malloc(((*node)->num_inputs + 1) * sizeof(void *));
+            void **input_datum_types = malloc(((*node)->num_inputs + 1) * sizeof(void *));
+            void **output_shapefacts = malloc((num_outputs + 1) * sizeof(void *));
+            void **output_datum_types = malloc((num_outputs + 1) * sizeof(void *));
+            int k = 0, index = 0;
+            int *indices = (*node)->parent_output_indices;
+            for (int i = 0; i < (*node)->num_inputs; i++) {
+                if (!(*node)->parents || k >= (*node)->num_inputs) break;
+                if (strcmp((*node)->parents[i]->model_name, "input") == 0) {
+                    input_shapefacts[k] = NULL;
+                    input_datum_types[k] = input_info_ptr->input_datum_types[index];
+                    k++;
+                    index++;
+                    continue;
+                }
+                input_shapefacts[k] = (*node)->parents[i]->shapefacts[indices[index]];
+                input_datum_types[k] = (*node)->parents[i]->datum_types[indices[index]];
+                index++;
+                k++;
+            }
+            if ((*node)->num_inputs == -1 || (*node)->num_parents == 0) {
+                for (int j = 0; j < num_inputs_ptr; j++) {
+                    input_shapefacts[k] = NULL;
+                    input_datum_types[k] = input_info_ptr->input_datum_types[j];
+                    k++;
+                }
+            }
+            assert(input_datum_types);
+            input_shapefacts[k] = NULL;
+
+            //Optimize the model and make it runnable
+            TractLlmInferenceModel *llm_inference_model = (TractLlmInferenceModel *)inference_model_ptr;
+            TractLlmRunnableModel *llm_runnable_model = NULL;
+            if (tract_onnx_model_into_optimized_and_runnable_llm(&llm_inference_model, &llm_runnable_model, k, input_shapefacts, input_datum_types, output_shapefacts, output_datum_types) != TRACT_RESULT_OK) {
+                fprintf(stderr, "Error calling tract: %s", tract_get_last_error());
+                check_ret(tract_llm_runnable_model_release(&llm_runnable_model), NULL);
+                assert(!llm_runnable_model);
+                return NULL;
+            }
+            assert(!llm_inference_model);
+            assert(llm_runnable_model);
+            free(input_shapefacts);
+            free(input_datum_types);
+
+            (*node)->shapefacts = (void **)malloc((num_outputs + 1) * sizeof(void *));
+            (*node)->datum_types = (void **)malloc((num_outputs + 1) * sizeof(void *));
+            for (int i = 0; i < num_outputs; i++) {
+                if (output_shapefacts[i] == NULL || output_datum_types[i] == NULL) {
+                    fprintf(stderr, "Output_shapefacts or output_datum_types of %d are NULL\n", i);
+                    continue;
+                }
+                (*node)->shapefacts[i] = output_shapefacts[i];
+                (*node)->datum_types[i] = output_datum_types[i];
+            }
+            (*node)->shapefacts[num_outputs] = NULL;
+            (*node)->datum_types[num_outputs] = NULL;
+            free(output_shapefacts);
+            free(output_datum_types);
+
+            runnable_model = (void*)llm_runnable_model;
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown model type.\n");
+            return NULL;
+    }  
+
+    return runnable_model;
+}
+
 void **
 load_model_to_memory(char **names, int model_count, int number_inputs_llm, operator_node **result_head)
 {
@@ -1079,13 +1161,13 @@ load_model_to_memory(char **names, int model_count, int number_inputs_llm, opera
             if (strstr(model_path, "model.onnx_data") != NULL) {
                 inference_models[i] = NULL;
             } else {
-                inference_models[i] = onnx_model_for_path(model_path, &inference_models[i], type);
+                inference_models[i] = nnef_model_for_path(model_path, &inference_models[i], type);
                 if (!inference_models[i]) {
                     return NULL;
                 }
             }
         } else {
-            inference_models[i] = onnx_model_for_path(model_path, &inference_models[i], type);
+            inference_models[i] = nnef_model_for_path(model_path, &inference_models[i], type);
             if (!inference_models[i]) {
                 return NULL;
             }
@@ -1106,7 +1188,7 @@ load_model_to_memory(char **names, int model_count, int number_inputs_llm, opera
         }
         previous = curr_node;
 
-        onnx_model_inputs(io, number_inputs_llm, inference_models[i], type, i, head, model_path);
+        nnef_model_inputs(io, number_inputs_llm, inference_models[i], type, i, head, model_path);
     }
 
     free_operator_io(io);
@@ -1215,19 +1297,22 @@ process_file(const char *path, char ***filenames)
 
     (*filenames)[0] = strdup(path);
     (*filenames)[1] = NULL;
-    fprintf(stderr, "Processing single ONNX file: %s\n", (*filenames)[0]);
+    fprintf(stderr, "Processing single NNEF file: %s\n", (*filenames)[0]);
     return 1;
 }
 
 static void *
 assign_into_array(FILE *fd, int size, int element_size)
 {
-    void *data = malloc(size * element_size);
+    int counter = 0;
+    if (element_size == sizeof(char)) counter = 1;
+    void *data = malloc(size * element_size + counter);
     if (!data) {
         fprintf(stderr, "Error allocating memory for file data\n");
         return NULL;
     }
     assert(fread(data, element_size, size, fd) == (size_t)size);
+    if (element_size == sizeof(char)) ((char *)data)[size] = '\0';
     return data;
 }
 
@@ -1267,20 +1352,27 @@ main(int argc, char **argv)
         fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_DNNs> <input1.pb> ... <inputN.pb>\n", argv[0]);
         return 1;
     }
-#else
-    if (argc != 6) {
-        fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_LLMs> <tokenizer.json> <path_to_ner_model_file> <ner_tokenizer.json> <prompt.txt>\n", argv[0]);
-        return 1;
-    }
+#else 
+    #if USE_PII_GUARDRAILS == 1
+        if (argc !=7) {
+            fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_LLMs> <tokenizer.json> <path_to_ner_model_file> <ner_tokenizer.json> <ner_config.json> <prompt.txt>\n", argv[0]);
+            return 1;
+        }
+    #else
+        if (argc != 4) {
+            fprintf(stderr, "Usage: %s <path_to_dir/path_to_file_for_LLMs> <tokenizer.json> <prompt.txt>\n", argv[0]);
+            return 1;
+        }
+    #endif
 #endif
 
     int num_models = 0, num_ner_models = 0;
     char **filenames = NULL, **ner_filenames = NULL;
-    const char *path_or_file = argv[1], *onnx_file = argv[3];
+    const char *path_or_file = argv[1];
     struct stat path_stat;
-    uint8_t *tokenizer = NULL; 
+    uint8_t *tokenizer = NULL, *ner_tokenizer = NULL, *ner_config = NULL; 
     char *prompt = NULL; 
-    int tokenizer_size = 0, prompt_size = 0;
+    int tokenizer_size = 0, ner_tokenizer_size = 0, ner_config_size = 0, prompt_size = 0;
 
     if (stat(path_or_file, &path_stat) != 0) {
         perror("stat");
@@ -1289,31 +1381,39 @@ main(int argc, char **argv)
 
     if (S_ISDIR(path_stat.st_mode)) {
         num_models = process_directory(path_or_file, &filenames);  
-    } else if (S_ISREG(path_stat.st_mode) && strstr(path_or_file, ".onnx") != NULL) {
+    } else if (S_ISREG(path_stat.st_mode) && strstr(path_or_file, ".nnef") != NULL) {
         num_models = process_file(path_or_file, &filenames);
     } else {
-        fprintf(stderr, "The path is neither a valid directory nor an ONNX file.\n");
+        fprintf(stderr, "The path is neither a valid directory nor a NNEF file.\n");
         return EXIT_FAILURE;
     }
-    num_ner_models = process_file(onnx_file, &ner_filenames);
+#if USE_PII_GUARDRAILS == 1
+    const char *nnef_file = argv[3];
+    num_ner_models = process_file(nnef_file, &ner_filenames);
+#endif
 
     input_info *input_info_ptr = malloc(sizeof(input_info));
     input_info_ptr->input_values = NULL;
     input_info_ptr->input_shapefacts = NULL;
     input_info_ptr->input_datum_types = NULL;
-    char *model_name = filenames[0], *ner_tokenizer_path = NULL;
+    char *model_name = filenames[0];
     ModelType type = MODEL_TYPE_CNN;
-    void *tokenizer_ptr;
+    void *tokenizer_ptr = NULL;
 
     int number_inputs_llm = 0;
     if (strstr(argv[2], "tokenizer.json") != NULL) {
         type = MODEL_TYPE_LLM;
 
-        FILE *fd_tokenizer = opening_file(argv[2]);
-        ner_tokenizer_path = argv[4];
-        FILE *fd_prompt = opening_file(argv[5]);
-        if (!fd_tokenizer || !fd_prompt) {
-            fprintf(stderr, "Error opening tokenizer or prompt\n");
+        FILE *fd_tokenizer = opening_file(argv[2]), *fd_ner_tokenizer = NULL, *fd_ner_config = NULL;
+        int number = 3;
+    #if USE_PII_GUARDRAILS == 1     
+        fd_ner_tokenizer = opening_file(argv[4]);
+        fd_ner_config = opening_file(argv[5]);
+        number = 6;
+    #endif
+        FILE *fd_prompt = opening_file(argv[number]);
+        if (!fd_tokenizer || !fd_prompt || ((!fd_ner_tokenizer || !fd_ner_config) && number == 6)) {
+            fprintf(stderr, "Error opening tokenizer or prompt or config file\n");
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
                 free(filenames[i]);
@@ -1333,9 +1433,13 @@ main(int argc, char **argv)
             }
         }
 
+    #if USE_PII_GUARDRAILS == 1
+        ner_tokenizer_size = size_of_file(fd_ner_tokenizer);
+        ner_config_size = size_of_file(fd_ner_config);
+    #endif
         tokenizer_size = size_of_file(fd_tokenizer);
         prompt_size = size_of_file(fd_prompt);
-        if (tokenizer_size < 0 || prompt_size < 0) {
+        if (tokenizer_size < 0 || ner_tokenizer_size < 0 || ner_config_size < 0 || prompt_size < 0) {
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
                 free(filenames[i]);
@@ -1347,12 +1451,18 @@ main(int argc, char **argv)
             free(ner_filenames);
             return 1;
         }
+    #if USE_PII_GUARDRAILS == 1
+        rewind(fd_ner_tokenizer);
+        rewind(fd_ner_config);
+        ner_tokenizer = (uint8_t *)assign_into_array(fd_ner_tokenizer, ner_tokenizer_size, sizeof(uint8_t));
+        ner_config = (uint8_t *)assign_into_array(fd_ner_config, ner_config_size, sizeof(uint8_t));
+    #endif
         rewind(fd_tokenizer);
         rewind(fd_prompt);
 
         tokenizer = (uint8_t *)assign_into_array(fd_tokenizer, tokenizer_size, sizeof(uint8_t));
         prompt = (char *)assign_into_array(fd_prompt, prompt_size, sizeof(char));
-        if (!tokenizer || !prompt) {
+        if (!tokenizer || !prompt || ((!ner_tokenizer || !ner_config) && number == 6)) {
             fprintf(stderr, "Error assigning image to array\n");
             free(input_info_ptr);
             for (int i = 0; i < num_models; i++) {
@@ -1365,22 +1475,40 @@ main(int argc, char **argv)
             free(ner_filenames);
             return 1;
         }
+    #if USE_PII_GUARDRAILS == 1
+        fclose(fd_ner_tokenizer);
+        fclose(fd_ner_config);
+    #endif
         fclose(fd_tokenizer);
         fclose(fd_prompt);
 
-
+        tract_force_build_patterns();
         check(tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr));
         free(tokenizer);
 
+        gettimeofday(&t1_inf, NULL);
+
         number_inputs_llm = 3;
-        if (strstr(model_name, "gpt2") != NULL) number_inputs_llm = 2;
+        if (strstr(model_name, "gpt2") != NULL) {
+            number_inputs_llm = 2;
+        }
+        fprintf(stderr, "Number inputs llm: %d\n", number_inputs_llm);
+
+#if USE_PII_REGEX == 0 && USE_PII_GUARDRAILS == 1
+        int number_inputs_ner = 3;
+        if ((strstr(ner_filenames[0], "distilbert") != NULL) || (strstr(ner_filenames[0], "roberta") != NULL)) number_inputs_ner = 2;
+        check(tract_ner_init(ner_tokenizer, ner_tokenizer_size, ner_config, ner_config_size, ner_filenames[0], number_inputs_ner, 0.35));
+        free(ner_tokenizer);
+        free(ner_config);
+#endif       
 
         input_info_ptr->input_values = malloc((number_inputs_llm + 1) * sizeof(void *));
         input_info_ptr->input_shapefacts = malloc((number_inputs_llm + 1) * sizeof(void *));
         input_info_ptr->input_datum_types = malloc((number_inputs_llm + 1) * sizeof(void *));
         memset(input_info_ptr->input_shapefacts, 0, (number_inputs_llm + 1) * sizeof(void *));
-        
-        if (tract_value_from_bytes_llm(tokenizer_ptr, prompt, ner_filenames[0], ner_tokenizer_path, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm) == TRACT_RESULT_KO) {
+
+
+        if (tract_nnef_value_from_bytes_llm(tokenizer_ptr, prompt, input_info_ptr->input_values, input_info_ptr->input_datum_types, number_inputs_llm) == TRACT_RESULT_KO) {
             free(input_info_ptr->input_values);
             free(input_info_ptr->input_shapefacts);
             free(input_info_ptr->input_datum_types);
@@ -1479,12 +1607,12 @@ main(int argc, char **argv)
                 char *inference = NULL;
                 uintptr_t next_token_id = 0;
                 tokens++;
-                check(tract_generate_text_llm(input_info_ptr->input_values, num_inputs, tokenizer_ptr, last_node->outputs, last_node->num_outputs, &inference, &next_token_id));
+                check(tract_nnef_generate_text_llm(input_info_ptr->input_values, num_inputs, tokenizer_ptr, last_node->outputs, last_node->num_outputs, &inference, &next_token_id));
                 fprintf(stderr, "%s\nNext_token_id: %ld\n", inference, next_token_id);
                 tract_free_cstring(inference);
                 
                 if (NUM_TOKENS > 1 && is_llm && strstr(model_name, "bert") == NULL) {
-                    check(tract_update_input_values_llm(input_info_ptr->input_values, num_inputs, next_token_id));
+                    check(tract_nnef_update_input_values_llm(input_info_ptr->input_values, num_inputs, next_token_id));
                 }
                 free_operator_node_output(head, type);
                 reset_node_visibility(head);
@@ -1512,8 +1640,8 @@ main(int argc, char **argv)
     fprintf(stderr, "Total elapsed time: %f\n", elapsed_time);
     free_operator_node(head, type);
     #if NUM_TOKENS != 0
-        free(input_info_ptr->input_shapefacts);
-        free(input_info_ptr->input_datum_types);
+        if (input_info_ptr->input_shapefacts) free(input_info_ptr->input_shapefacts);
+        if (input_info_ptr->input_datum_types) free(input_info_ptr->input_datum_types);
     #endif
     free(input_info_ptr);
 
@@ -1526,7 +1654,10 @@ main(int argc, char **argv)
     }
     free(ner_filenames);
     if (tokenizer_ptr) check(tract_free_tokenizer(&tokenizer_ptr));
-    
+#ifndef USE_PII_REGEX
+    check(tract_ner_shutdown());
+#endif
+
     return 0;
 }
 

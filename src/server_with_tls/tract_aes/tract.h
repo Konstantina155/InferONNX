@@ -56,6 +56,8 @@ typedef struct TractInferenceModel TractInferenceModel;
 
 typedef struct TractLlmInferenceModel TractLlmInferenceModel;
 
+typedef struct TractLlmRunnableModel TractLlmRunnableModel;
+
 typedef struct TractLlmTransformedModel TractLlmTransformedModel;
 
 typedef struct TractModel TractModel;
@@ -165,6 +167,10 @@ enum TRACT_RESULT tract_onnx_model_for_path_llm(const char *model_path,
                                                 const EncryptionParameters *params_weights,
                                                 struct TractLlmInferenceModel **inference_model);
 
+enum TRACT_RESULT tract_nnef_model_for_path_llm(const char *model_path,
+                                                const EncryptionParameters *params,
+                                                struct TractModel **inference_model);
+
 enum TRACT_RESULT tract_free_input_names(char **input_names, uintptr_t num_inputs);
 
 enum TRACT_RESULT tract_llm_inference_model_input_count(const struct TractLlmInferenceModel *model,
@@ -181,7 +187,9 @@ enum TRACT_RESULT tract_llm_inference_model_output_name(const struct TractLlmInf
                                                         uintptr_t output,
                                                         int8_t **name);
 
-enum TRACT_RESULT tract_llm_value_destroy(void **value);
+enum TRACT_RESULT tract_onnx_llm_value_destroy(void **value);
+
+enum TRACT_RESULT tract_nnef_llm_value_destroy(void **value);
 
 enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
                                          uintptr_t tokenizer_buffer_size,
@@ -189,22 +197,38 @@ enum TRACT_RESULT tract_create_tokenizer(const uint8_t *tokenizer_buffer,
 
 enum TRACT_RESULT tract_free_tokenizer(void **tokenizer_ptr);
 
-enum TRACT_RESULT tract_load_ner_model_into_memory(const char *model_name,
-                                                   const uint8_t *model_bytes,
-                                                   uintptr_t model_len,
-                                                   const char *tokenizer_name,
-                                                   const uint8_t *tokenizer_bytes,
-                                                   uintptr_t tokenizer_len);
+enum TRACT_RESULT tract_ner_init(const uint8_t *tokenizer_buffer,
+                                 uintptr_t tokenizer_buffer_size,
+                                 const uint8_t *config_buffer,
+                                 uintptr_t config_buffer_size,
+                                 const uint8_t *model_buffer,
+                                 uintptr_t model_buffer_size,
+                                 uintptr_t num_inputs,
+                                 float min_score);
 
-enum TRACT_RESULT tract_value_from_bytes_llm(void *tokenizer_ptr,
-                                             const char *prompt,
-                                             void **input_values,
-                                             void **input_datum_types,
-                                             uintptr_t num_inputs);
+enum TRACT_RESULT tract_ner_shutdown(void);
 
-enum TRACT_RESULT tract_free_llm_inputs(void **input_values, uintptr_t num_inputs);
+enum TRACT_RESULT tract_input_datum_types_init_llm(void **input_datum_types, uintptr_t num_inputs);
 
-enum TRACT_RESULT tract_llm_inference_model_release(struct TractLlmInferenceModel **model);
+enum TRACT_RESULT tract_onnx_value_from_bytes_llm(void *tokenizer_ptr,
+                                                  const char *prompt,
+                                                  void **input_values,
+                                                  uintptr_t num_inputs);
+
+enum TRACT_RESULT tract_nnef_value_from_bytes_llm(void *tokenizer_ptr,
+                                                  const char *prompt,
+                                                  void **input_values,
+                                                  uintptr_t num_inputs);
+
+enum TRACT_RESULT tract_onnx_free_llm_inputs(void **input_values, uintptr_t num_inputs);
+
+enum TRACT_RESULT tract_nnef_free_llm_inputs(void **input_values, uintptr_t num_inputs);
+
+enum TRACT_RESULT tract_onnx_llm_inference_model_release(struct TractLlmInferenceModel **model);
+
+enum TRACT_RESULT tract_nnef_llm_inference_model_release(struct TractModel **model);
+
+enum TRACT_RESULT tract_llm_runnable_model_release(struct TractLlmRunnableModel **model);
 
 enum TRACT_RESULT tract_inference_model_into_optimized_llm(uintptr_t num_inputs,
                                                            void **input_shapefacts,
@@ -218,6 +242,19 @@ enum TRACT_RESULT tract_model_into_runnable_and_run_llm(void **inputs,
                                                         void **outputs,
                                                         void **input_shapefacts,
                                                         void **input_datum_types);
+
+enum TRACT_RESULT tract_onnx_model_into_optimized_and_runnable_llm(struct TractLlmInferenceModel **model,
+                                                                   struct TractLlmRunnableModel **runnable_model,
+                                                                   uintptr_t num_inputs,
+                                                                   void **input_shapefacts,
+                                                                   void **input_datum_types,
+                                                                   void **output_shapefacts,
+                                                                   void **output_datum_types);
+
+enum TRACT_RESULT tract_runnable_run_llm(void **inputs,
+                                         uintptr_t num_inputs,
+                                         struct TractLlmRunnableModel *runnable_model,
+                                         void **outputs);
 
 enum TRACT_RESULT tract_inference_model_into_optimized_and_run_llm(void **inputs,
                                                                    uintptr_t num_inputs,
@@ -239,17 +276,34 @@ enum TRACT_RESULT tract_model_for_path_into_optimized_and_run_llm(const char *mo
                                                                   void **output_shapefacts,
                                                                   void **output_datum_types);
 
-enum TRACT_RESULT tract_generate_text_llm(void **inputs,
-                                          uintptr_t num_inputs,
-                                          void *tokenizer_ptr,
-                                          void **outputs,
-                                          uintptr_t num_outputs,
-                                          char **inference,
-                                          uintptr_t *next_token_id);
+enum TRACT_RESULT tract_nnef_model_into_runnable_and_run_llm(void **inputs,
+                                                             uintptr_t num_inputs,
+                                                             struct TractModel **transformed_model,
+                                                             void **outputs);
 
-enum TRACT_RESULT tract_update_input_values_llm(void **input_values,
-                                                uintptr_t num_inputs,
-                                                uintptr_t next_token_id);
+enum TRACT_RESULT tract_onnx_generate_text_llm(void **inputs,
+                                               uintptr_t num_inputs,
+                                               void *tokenizer_ptr,
+                                               void **outputs,
+                                               uintptr_t num_outputs,
+                                               char **inference,
+                                               uintptr_t *next_token_id);
+
+enum TRACT_RESULT tract_nnef_generate_text_llm(void **inputs,
+                                               uintptr_t num_inputs,
+                                               void *tokenizer_ptr,
+                                               void **outputs,
+                                               uintptr_t num_outputs,
+                                               char **inference,
+                                               uintptr_t *next_token_id);
+
+enum TRACT_RESULT tract_onnx_update_input_values_llm(void **input_values,
+                                                     uintptr_t num_inputs,
+                                                     uintptr_t next_token_id);
+
+enum TRACT_RESULT tract_nnef_update_input_values_llm(void **input_values,
+                                                     uintptr_t num_inputs,
+                                                     uintptr_t next_token_id);
 
 enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           void *tokenizer_ptr,
@@ -259,6 +313,18 @@ enum TRACT_RESULT tract_run_latest_models(const char *model_path,
                                           uintptr_t num_tokens,
                                           const char *prompt,
                                           struct TractLlmInferenceModel **inference_model);
+
+enum TRACT_RESULT make_ner_runnable(const uint8_t *model_buffer,
+                                    uintptr_t model_buffer_size,
+                                    struct TractLlmRunnableModel **runnable_model);
+
+void tract_free_ner_runnable(struct TractLlmRunnableModel *runnable_model);
+
+enum TRACT_RESULT tract_run_ner(struct TractLlmRunnableModel *model,
+                                void *tokenizer_ptr,
+                                const char *prompt,
+                                char **inference,
+                                uintptr_t num_inputs);
 
 enum TRACT_RESULT tract_run_albert(const char *model_path,
                                    void *tokenizer_ptr,
@@ -442,6 +508,15 @@ enum TRACT_RESULT tract_model_input_fact(const struct TractModel *model,
 enum TRACT_RESULT tract_model_output_name(const struct TractModel *model,
                                           uintptr_t output,
                                           char **name);
+
+/**
+ * Query the label of a model output.
+ *
+ * The returned label must be freed by the caller using tract_free_cstring.
+ */
+enum TRACT_RESULT tract_model_output_label_name(const struct TractModel *model,
+                                                uintptr_t output,
+                                                char **name);
 
 /**
  * Query the output fact of a model.

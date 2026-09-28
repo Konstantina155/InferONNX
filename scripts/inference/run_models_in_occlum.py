@@ -22,8 +22,13 @@ def init_client(use_sys_time, num_tokens):
     use_sys_time_operators = 1 if configuration == "memory_only_operators" else 0
     use_memory_only = 0 if "on_disk" in configuration else 1
     use_file_caching = 1 if configuration == "on_disk_caching" else 0
+    use_pii_regex = 1 if guardrails_option == "guardrails_regex" else 0
+    if guardrails_option == "no_guardrails":
+        use_pii_guardrails = 0
+    else:    
+        use_pii_guardrails = 1
 
-    build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators} NUM_TOKENS={num_tokens}"
+    build_flags = f"USE_MEMORY_ONLY={use_memory_only} USE_AES=1 USE_OCCLUM=1 USE_SYS_TIME={use_sys_time} USE_SYS_TIME_OPERATORS={use_sys_time_operators} NUM_TOKENS={num_tokens} USE_PII_REGEX={use_pii_regex} USE_PII_GUARDRAILS={use_pii_guardrails}"
     run_command_without_output(f"make clean && make {build_flags} occlum_server", cwd=f"{server_with_tls_path}/src")
     run_command_without_output(f"make clean && make {build_flags} USE_FILE_CACHING={use_file_caching}", cwd=server_with_tls_path)
 
@@ -35,7 +40,7 @@ def modify_occlum_json(user_space):
     data['resource_limits']['kernel_space_heap_size'] = "128MB"
     with open(file_path, 'w') as file:
         json.dump(data, file, indent=4)
-    print(f"'user_space_size' updated to {data['resource_limits']['user_space_size']}")
+    print(f"'user_space_size' updated to {data['resource_limits']['user_space_size']} and kernel_space_heap_size to {data['resource_limits']['kernel_space_heap_size']}")
 
 def extract_hex_numbers(text):
     start_time = tme.time()
@@ -64,8 +69,18 @@ def client_side(partition_folder, unique_id):
     if is_llm:
         input_file = f"{path_}test_data_set_0/tokenizer.json"
 
-    command = f"{server_with_tls_path}/ssl_client models {input_file} {path_}{partition_folder}"
+    if guardrails_option == "guardrails_regex" or guardrails_option == "no_guardrails":
+        command = f"{server_with_tls_path}/ssl_client models default {input_file} {path_}{partition_folder}"
+    else:
+        if "distilbert" in ner_model:
+            command = f"{server_with_tls_path}/ssl_client models guardrails {inferONNX_path}/models/distilbert-base-finetuned/config.json {inferONNX_path}/models/distilbert-base-finetuned/test_data_set_0/tokenizer.json {inferONNX_path}/models/distilbert-base-finetuned/distilbert-base-finetuned.onnx {input_file} {path_}{partition_folder}"
+        elif "bert-base" in ner_model:
+            command = f"{server_with_tls_path}/ssl_client models guardrails {inferONNX_path}/models/bert-base-ner/config.json {inferONNX_path}/models/bert-base-ner/test_data_set_0/tokenizer.json {inferONNX_path}/models/bert-base-ner/bert-base-ner.onnx {input_file} {path_}{partition_folder}"
+        else:
+            command = f"{server_with_tls_path}/ssl_client models guardrails {inferONNX_path}/models/bert-large-ner/config.json {inferONNX_path}/models/bert-large-ner/test_data_set_0/tokenizer.json {inferONNX_path}/models/bert-large-ner/bert-large-ner.onnx {input_file} {path_}{partition_folder}"
+    print(command)
     result = run_command_with_output(command)
+    print("Result: ", result)
 
     if "on_disk" in configuration:
         print("In here")
@@ -114,7 +129,21 @@ def extract_time(text, num_tokens):
 
     return "\n".join(filtered + lines_after_inference[start_index:closing_index])
 
+def load_dataset():
+    dataset_path = inferONNX_path + "/models/1en.jsonl"
+    prompts = []
+    with open(dataset_path, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= num_runs:
+                break
+
+            row = json.loads(line)
+            prompts.append(row["source_text"])
+    print(f"Loaded {len(prompts)} prompts")
+    return prompts
+
 def manage_connection():
+    prompts = load_dataset()
     unique_id = 0
     for model_name in path:
         modify_occlum_json(occlum_user_space[unique_id])
@@ -128,6 +157,11 @@ def manage_connection():
             num_tokens = number_of_tokens
 
         for i in range(num_runs):
+            prompt = prompts[i]
+            prompt_path = f"{inferONNX_path}/src/server_with_tls/scripts/prompt.txt"
+            with open(prompt_path, "w", encoding="utf-8") as prompt_f:
+                prompt_f.write(prompt)
+
             init_client(0, num_tokens)
             if configuration == "on_disk":
                 run_command("sync; sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'")
@@ -171,20 +205,29 @@ def close_connection():
     output.wait()
 
 def main():
-    if (len(sys.argv) != 6 and len(sys.argv) != 7) or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions"):
-        print("Usage: python3 run_models_in_occlum.py <memory_only/memory_only_operators/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_tokens> <number_of_runs> <path_to_inferONNX> <''/model_name_for_memory_only_operators>")
+    if (len(sys.argv) != 7 and len(sys.argv) != 8 and len(sys.argv) != 9) or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "on_disk_caching"] or (sys.argv[2] != "entire" and "partitions" not in sys.argv[2]) or (sys.argv[1] == "memory_only" and sys.argv[2] == "partitions") or sys.argv[6] not in ["no_guardrails", "guardrails_ner", "guardrails_regex"]:
+        print("Usage: python3 run_models_in_occlum.py <memory_only/memory_only_operators/on_disk/on_disk_caching> <entire/partitions only for disk> <number_of_tokens> <number_of_runs> <path_to_inferONNX> <guardrails_ner/guardrails_regex> <''/model_name_for_memory_only_operators>")
         exit(1)
 
-    global configuration, entire_or_partition, number_of_tokens, num_runs, inferONNX_path
+    global configuration, entire_or_partition, number_of_tokens, num_runs, inferONNX_path, guardrails_option, ner_model
     configuration = sys.argv[1]
     entire_or_partition = sys.argv[2]
     number_of_tokens = int(sys.argv[3])
     num_runs = int(sys.argv[4])
     inferONNX_path = sys.argv[5]
+    guardrails_option = sys.argv[6]
     model_folder = ""
-    if len(sys.argv) == 7:
-        model_folder = sys.argv[6]
-        assert model_folder != "", "Model folder is not provided" 
+    ner_model = ""
+    if len(sys.argv) == 8 or len(sys.argv) == 9:
+        if guardrails_option != "guardrails_ner":
+            model_folder = sys.argv[7]
+            assert model_folder != "", "Model folder is not provided" 
+        else:
+            ner_model = sys.argv[7]
+            assert ner_model in ["distilbert", "bert-base", "bert-large"], "NER model is not correct" 
+            if len(sys.argv) == 9: 
+                model_folder = sys.argv[8]
+                assert model_folder != "", "Model folder is not provided" 
 
     if inferONNX_path == "./":
         inferONNX_path = os.getcwd()
@@ -203,7 +246,14 @@ def main():
         path = [
             "gpt2/", "smol-llama-220M-GQA/", "mistral-300M/", "qwen2.5-0.5B/"
         ]
-        occlum_user_space = ["5GB", "6GB", "9GB", "16GB"]
+        if ner_model == "":
+            occlum_user_space = ["5GB", "6GB", "9GB", "16GB"]
+        elif "distilbert" in ner_model:
+            occlum_user_space = ["6GB", "7GB", "10GB", "18GB"]
+        elif "bert-base" in ner_model:
+            occlum_user_space = ["6GB", "7GB", "11GB", "18GB"]
+        else:
+            occlum_user_space = ["10GB", "11GB", "13GB", "19GB"] #bert-large: 10, 11, 13, 19, bert-base: 6,7,11,18, distilbert: 6,7,10,18 - before NER model: 5,6,9,16
     else:
         if "gpt" in model_folder:
             occlum_user_space = ["5GB"]

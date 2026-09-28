@@ -36,21 +36,22 @@ typedef struct __attribute__((packed)) {
     int id;
     int num_models;
     int num_inputs;
+    int num_inputs_ner;
     char **names;
     uint64_t *size_models;
     uint8_t **models;
-    uint64_t* size_inputs;
+    uint64_t *size_inputs;
     float **input;
     unsigned char **tags;
     char *prompt;
     uint64_t tokenizer_size;
     uint8_t *tokenizer;
-    char *ner_model_name;
     uint64_t ner_model_size;
     uint8_t *ner_model;
-    char *ner_tokenizer_name;
     uint64_t ner_tokenizer_size;
     uint8_t *ner_tokenizer;
+    uint64_t ner_config_size;
+    uint8_t *ner_config;
 } request;
 
 typedef struct encrypted_models_info
@@ -69,21 +70,13 @@ typedef struct client_result
     unsigned char **tag;
 } client_result;
 
-typedef struct input_info {
-    void **input_values;
-    void **input_shapefacts;
-    void **input_datum_types;
-}input_info;
-
 typedef struct operator_node {
     #if USE_AES == 0 && USE_MEMORY_ONLY == 0 || USE_AES == 1 && USE_MEMORY_ONLY == 1
-        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+        void (*run_inference)(struct operator_node **node, void **input_values, void *inference_model_ptr);
     #elif USE_AES == 1
-        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
+        void (*run_inference)(struct operator_node **node, void **input_values, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
     #endif
     void **outputs;
-    void **shapefacts;
-    void **datum_types;
     char *model_name;
     int num_inputs;
     int num_outputs;

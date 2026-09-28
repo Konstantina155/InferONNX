@@ -320,7 +320,7 @@ deserialize_client_request(const char* buf, request* req)
 {
     size_t offset = 0;
 
-    // int field -> command + id + num_models + num_inputs
+    // int field -> command + id + num_models + num_inputs + num_inputs_ner
     memcpy(&req->command, buf + offset, sizeof(int));
     offset += sizeof(int);
     memcpy(&req->id, buf + offset, sizeof(int));
@@ -329,8 +329,10 @@ deserialize_client_request(const char* buf, request* req)
     offset += sizeof(int);
     memcpy(&req->num_inputs, buf + offset, sizeof(int));
     offset += sizeof(int);
+    memcpy(&req->num_inputs_ner, buf + offset, sizeof(int));
+    offset += sizeof(int);
 
-    fprintf(stderr, "command: %d, id: %d, num_models: %d, num_inputs: %d\n", req->command, req->id, req->num_models, req->num_inputs);
+    fprintf(stderr, "command: %d, id: %d, num_models: %d, num_inputs: %d, num_inputs_ner: %d\n", req->command, req->id, req->num_models, req->num_inputs, req->num_inputs_ner);
 
     int size = req->num_models;
     int num_inputs = req->num_inputs;
@@ -394,14 +396,20 @@ deserialize_client_request(const char* buf, request* req)
         }
         req->tags = NULL;
 
+        // Char * field -> prompt
+        req->prompt = NULL;
+
         // Uint64_t field -> tokenizer_size
         memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
         offset += sizeof(uint64_t);
-        req->tokenizer = NULL;
 
-        // Char * field -> ner_model_name
-        req->ner_model_name = strdup(buf + offset);
-        offset += strlen(buf + offset) + 1;
+        if (req->tokenizer_size > 0) {
+            req->tokenizer = malloc(req->tokenizer_size * sizeof(uint8_t));
+            memcpy(req->tokenizer, buf + offset, req->tokenizer_size * sizeof(uint8_t));
+            offset += req->tokenizer_size * sizeof(uint8_t);
+        } else {
+            req->tokenizer = NULL;
+        }
 
         // Uint64_t field -> ner_model_size
         memcpy(&req->ner_model_size, buf + offset, sizeof(uint64_t));
@@ -416,21 +424,30 @@ deserialize_client_request(const char* buf, request* req)
             req->ner_model = NULL;
         }
 
-        // Char * field -> ner_tokenizer_name
-        req->ner_tokenizer_name = strdup(buf + offset);
-        offset += strlen(buf + offset) + 1;
-
         // Uint64_t field -> ner_tokenizer_size
         memcpy(&req->ner_tokenizer_size, buf + offset, sizeof(uint64_t));
         offset += sizeof(uint64_t);
 
-        // Uint8_t* field -> tokenizer
+        // Uint8_t* field -> ner_tokenizer
         if (req->ner_tokenizer_size > 0) {
             req->ner_tokenizer = malloc(req->ner_tokenizer_size * sizeof(uint8_t));
             memcpy(req->ner_tokenizer, buf + offset, req->ner_tokenizer_size * sizeof(uint8_t));
             offset += req->ner_tokenizer_size * sizeof(uint8_t);
         } else {
             req->ner_tokenizer = NULL;
+        }
+
+        // Uint64_t field -> ner_config_size
+        memcpy(&req->ner_config_size, buf + offset, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+
+        // Uint8_t* field -> ner_config
+        if (req->ner_config_size > 0) {
+            req->ner_config = malloc(req->ner_config_size * sizeof(uint8_t));
+            memcpy(req->ner_config, buf + offset, req->ner_config_size * sizeof(uint8_t));
+            offset += req->ner_config_size * sizeof(uint8_t);
+        } else {
+            req->ner_config = NULL;
         }
     } else {
         // Uint64_t* field -> size_inputs
@@ -469,29 +486,29 @@ deserialize_client_request(const char* buf, request* req)
             req->tags = NULL;
         }
 
+        // char * field -> prompt
+#if NUM_TOKENS == 0
+        req->prompt = NULL;
+#else
+        req->prompt = strdup(buf + offset);
+        offset += strlen(buf + offset) + 1;
+#endif
+        fprintf(stderr, "Prompt is: %s", req->prompt);
+
+        req->num_models = 0;
+        req->num_inputs_ner = 0;
         req->names = NULL;
         req->size_models = NULL;
         req->models = NULL;
         req->num_models = 0;
-        req->ner_model_name = NULL;
+        req->tokenizer_size = 0;
+        req->tokenizer = NULL;
         req->ner_model_size = 0;
         req->ner_model = NULL;
-        req->ner_tokenizer_name = NULL;
         req->ner_tokenizer_size = 0;
         req->ner_tokenizer = NULL;
-
-        // Uint64_t field -> tokenizer_size
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
-        offset += sizeof(uint64_t);
-
-        // Uint8_t* field -> tokenizer
-        if (req->tokenizer_size > 0) {
-            req->tokenizer = malloc(req->tokenizer_size * sizeof(uint8_t));
-            memcpy(req->tokenizer, buf + offset, req->tokenizer_size * sizeof(uint8_t));
-            offset += req->tokenizer_size * sizeof(uint8_t);
-        } else {
-            req->tokenizer = NULL;
-        }
+        req->ner_config_size = 0;
+        req->ner_config = NULL;
     }
 }
 
@@ -515,12 +532,6 @@ free_request(request *req_original)
         }
         free(req_original->models);
     }
-    if (req_original->tags != NULL) {
-        for (int i = 0; req_original->tags[i] != NULL; ++i) {
-            free(req_original->tags[i]);
-        }
-        free(req_original->tags);
-    }
     free(req_original->size_inputs);
     if (req_original->input != NULL) {
         for (int i = 0; i < num_inputs; ++i) {
@@ -528,17 +539,26 @@ free_request(request *req_original)
         }
         free(req_original->input);
     }
-    if (req_original->ner_model_name != NULL) { 
-        free(req_original->ner_model_name);
+    if (req_original->tags != NULL) {
+        for (int i = 0; req_original->tags[i] != NULL; ++i) {
+            free(req_original->tags[i]);
+        }
+        free(req_original->tags);
+    }
+    if (req_original->prompt != NULL) { 
+        free(req_original->prompt);
+    }
+    if (req_original->tokenizer != NULL) {
+        free(req_original->tokenizer);
     }
     if (req_original->ner_model != NULL) { 
         free(req_original->ner_model);
     }
-    if (req_original->ner_tokenizer_name != NULL) { 
-        free(req_original->ner_tokenizer_name);
-    }
     if (req_original->ner_tokenizer != NULL) { 
         free(req_original->ner_tokenizer);
+    }
+    if (req_original->ner_config != NULL) { 
+        free(req_original->ner_config);
     }
 #if NUM_TOKENS > 0        
         tract_free_onig();
@@ -560,22 +580,28 @@ handle_request(char *client_request, onnx_table *table)
     uint64_t *size_inputs = req_copy.size_inputs;
     int num_inputs = req_copy.num_inputs;
     int num_models = req_copy.num_models;
+    int num_inputs_ner = req_copy.num_inputs_ner;
     uint64_t *size_models = req_copy.size_models;
     unsigned char **tags = req_copy.tags;
+    char *prompt = req_copy.prompt;
     uint64_t tokenizer_size = req_copy.tokenizer_size;
     uint8_t* tokenizer = req_copy.tokenizer;
-    char *ner_model_name = req_copy.ner_model_name;
     uint64_t ner_model_size = req_copy.ner_model_size;
     uint8_t *ner_model = req_copy.ner_model;
-    char *ner_tokenizer_name = req_copy.ner_tokenizer_name;
     uint64_t ner_tokenizer_size = req_copy.ner_tokenizer_size;
     uint8_t *ner_tokenizer = req_copy.ner_tokenizer;
+    uint64_t ner_config_size = req_copy.ner_config_size;
+    uint8_t *ner_config = req_copy.ner_config;
+
+    //struct timeval t1, t2;
+    //double elapsed_time;
 
     int size = 0;
     client_result *c_l = initialize_client_result();
     switch (command) {
     case 0: {
-        if (!names || num_models == 0 || !models || contains_empty_name(names, num_models) || (id != -1 || !input || tags || tokenizer_size != 0)) {
+        if (!names || num_models == 0 || !models || contains_empty_name(names, num_models) || (id != -1 || tags || prompt) ||
+            (size_inputs && !input && !tokenizer) || (size_inputs && input && tokenizer)) {
             fprintf(stderr, "Invalid request for MODEL\n");
             free_request(&req_copy);
             free(client_request);
@@ -586,15 +612,106 @@ handle_request(char *client_request, onnx_table *table)
 
         names = add_path_to_names(names, num_models);
 
-        if (ner_model_name != NULL) {
-            fprintf(stderr, "Model size: %ld, model name: %s, tok size: %ld, tok name: %s", ner_model_size, ner_model_name, ner_tokenizer_size, ner_tokenizer_name);
-            if (ner_model_size == 0) { fprintf(stderr, "[ERROR] 1\n"); }
-            if (ner_tokenizer_size == 0) { fprintf(stderr, "[ERROR] 2\n"); }
-            if (ner_tokenizer_name == NULL) { fprintf(stderr, "[ERROR] 3\n"); }
-            if (ner_model == NULL) { fprintf(stderr, "[ERROR] 4\n"); }
-            if (ner_tokenizer == NULL) { fprintf(stderr, "[ERROR] 5\n"); }
-            load_ner_model_to_memory(ner_model_name, ner_model, ner_model_size, ner_tokenizer_name, ner_tokenizer, ner_tokenizer_size);
+    #if USE_PII_REGEX == 0 && USE_PII_GUARDRAILS == 1
+        /* testing for standalone SGX
+        TractLlmRunnableModel *ner_llm_runnable_model = NULL;
+        if (make_ner_runnable(ner_model, ner_model_size, &ner_llm_runnable_model) != TRACT_RESULT_OK) {
+            fprintf(stderr, "Failed to create runnable model\n");
+            free_request(&req_copy);
+            free(client_request);
+            return NULL;
         }
+        void *tokenizer_ptr2 = NULL;
+        if (tract_create_tokenizer(ner_tokenizer, ner_tokenizer_size, &tokenizer_ptr2) != TRACT_RESULT_OK) {
+            fprintf(stderr, "Failed to create tokenizer\n");
+            free_request(&req_copy);
+            free(client_request);
+            return NULL;
+        }
+
+        int num_inputs = 3;
+        char *inference = NULL;
+        char *prompt = "<p>I, wsgqnpedll06819, consent to the treatment of my child at 7 Pines Road by Dr. wsgqnpedll06819, ID: 8719085183. Contact: +1164814-6512. For billing queries, use CC: 6004199045614389. Please send OTP: 01|.69 to 1997S@gmail.com. Our address: 92305. Policy: US-EN-4958-U517.</p>";
+        gettimeofday(&t1, NULL);
+        check_ret(tract_run_ner(ner_llm_runnable_model, tokenizer_ptr2, prompt, &inference, num_inputs), NULL);
+        gettimeofday(&t2, NULL);
+        elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+        fprintf(stderr, "%s!\n", inference);
+        fprintf(stderr, "Time to run NER: %f ms\n", elapsed_time);
+
+        inference = NULL;
+        prompt = "Child: Vanderlei Greppi \
+                    Date of Birth: July/92 \
+                    Contact Person: Mister Vanderlei Greppi \
+                    Contact Email: vandegreppi22@aol.com \
+                    Address: 225, Townhouse 217 \
+                    Country: US";
+        gettimeofday(&t1, NULL);
+        check_ret(tract_run_ner(ner_llm_runnable_model, tokenizer_ptr2, prompt, &inference, num_inputs), NULL);
+        gettimeofday(&t2, NULL);
+        elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+        fprintf(stderr, "%s!\n", inference);
+        fprintf(stderr, "Time to run NER: %f ms\n", elapsed_time);
+
+        inference = NULL;
+        prompt = "Student: Ntaniela Oberrauter \
+                    DOB: 1954-11-29T00:00:00 \
+                    Emergency Contact: Madame Ntaniela Oberrauter \
+                    Email: 48oberrauter@protonmail.com \
+                    Address: 1640 Quadruplex 150, United States \
+                    Coordinates: [32.85768, -97.3]";\
+        gettimeofday(&t1, NULL);
+        check_ret(tract_run_ner(ner_llm_runnable_model, tokenizer_ptr2, prompt, &inference, num_inputs), NULL);
+        gettimeofday(&t2, NULL);
+        elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+        fprintf(stderr, "%s!\n", inference);
+        fprintf(stderr, "Time to run NER: %f ms\n", elapsed_time);
+
+        inference = NULL;
+        prompt = "Child: Achill Forgiano \
+                    Date of Birth: 17/10/1944 \
+                    Contact Person: Mstr Achill Forgiano \
+                    Contact Email: achill.forgiano@outlook.com \
+                    Address: 1552, Tower 557 \
+                    Country: United States";
+        gettimeofday(&t1, NULL);
+        check_ret(tract_run_ner(ner_llm_runnable_model, tokenizer_ptr2, prompt, &inference, num_inputs), NULL);
+        gettimeofday(&t2, NULL);
+        elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+        fprintf(stderr, "%s!\n", inference);
+        fprintf(stderr, "Time to run NER: %f ms\n", elapsed_time);
+
+        inference = NULL;
+        prompt = "Student: Anatoliy Zobeiri \
+                    DOB: 13th September 1960 \
+                    Emergency Contact: Master Anatoliy Zobeiri \
+                    Email: A@tutanota.com \
+                    Address: 1457 Loft 792, United States \
+                    Coordinates: [40.06815, -105.05996]";
+        gettimeofday(&t1, NULL);
+        check_ret(tract_run_ner(ner_llm_runnable_model, tokenizer_ptr2, prompt, &inference, num_inputs), NULL);
+        gettimeofday(&t2, NULL);
+        elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+        elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+        fprintf(stderr, "%s!\n", inference);
+        fprintf(stderr, "Time to run NER: %f ms\n", elapsed_time);
+
+        tract_free_tokenizer(tokenizer_ptr2);
+        free_request(&req_copy);
+        free(client_request);
+        return NULL; 
+        */
+
+        if (load_ner_model_to_memory(num_inputs_ner, ner_model, ner_model_size, ner_tokenizer, ner_tokenizer_size, ner_config, ner_config_size) == 1) {
+            free_request(&req_copy);
+            free(client_request);
+            return NULL;
+        }
+    #endif
 
         if (find_duplicate_names_from_id(table, names)) {
             char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
@@ -637,6 +754,15 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->IV, me->IV, IV_BYTES);
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
         m->inference_models_ptr = NULL;
+        void *tokenizer_ptr = NULL;
+        if (tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr) != TRACT_RESULT_OK) {
+            fprintf(stderr, "Failed to create tokenizer\n");
+            free_encrypted_models_info(me, num_models);
+            free_request(&req_copy);
+            free(client_request);
+            return NULL;
+        }
+        m->tokenizer_ptr = tokenizer_ptr;
         m->head = NULL;
   
         load_model_to_memory(&m, me->tags, num_models);
@@ -694,7 +820,9 @@ handle_request(char *client_request, onnx_table *table)
             }
         }
 
-        if (names || id == -1 || num_models != 0) {
+        if (names || id == -1 || num_models != 0 || prompt == NULL || tokenizer_size != 0 || 
+            tokenizer != NULL || num_inputs_ner != 0 || ner_model_size != 0 || ner_model != NULL || 
+            ner_tokenizer_size != 0 || ner_tokenizer != NULL || ner_config_size != 0 || ner_config != NULL) {
             fprintf(stderr, "Invalid request for MODEL_INPUT for rest fields\n");
             free_request(&req_copy);
             return NULL;
@@ -748,9 +876,9 @@ handle_request(char *client_request, onnx_table *table)
         }
 
 #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, &tokenizer, tokenizer_size, m, tags, m->size);
+        result = inference_aes(input, num_inputs, prompt, m, tags, m->size);
 #else
-        result = inference_memory_only(input, num_inputs, &tokenizer, tokenizer_size, m);
+        result = inference_memory_only(input, num_inputs, prompt, m);
 #endif
 
         if (!result) {
@@ -1007,10 +1135,18 @@ reset:
     fflush(stdout);
 
     while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
-        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-            fprintf(stderr, " failed\n   mbedtls_ssl_handshake returned %d\n", ret);
-            goto reset;
+        if (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+            ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            continue;
         }
+
+        mbedtls_net_free(&client_fd);
+        mbedtls_ssl_session_reset(&ssl);
+        goto reset;
+        // if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        //     fprintf(stderr, " failed\n   mbedtls_ssl_handshake returned %d\n", ret);
+        //     goto reset;
+        // }
     }
     fprintf(stderr, " ok\n\n");
 #ifdef USE_SYS_TIME
@@ -1055,7 +1191,8 @@ reset:
         }
         fprintf(stderr, "Bytes received: %d\n Message from client: %ld\n", ret, request_size);
 
-        if (ret == 3 && request_size == 40) {
+        fprintf(stderr, "Request size: %ld\n", request_size);
+        if (ret == 3 && request_size == 52) {
             fprintf(stderr, "Client wants to close the connection...\n");
             free_onnx_table(table);
             ret = 0;
