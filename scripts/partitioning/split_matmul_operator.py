@@ -17,7 +17,7 @@ assert number_of_divisions > 0, "Number of divisions must be > 0"
 assert model_name in ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"], "Model name is not correct"
 assert split_mode in ["row", "column"], "Split method is not correct"
 
-model_path = os.path.join(InferONNX_path, "models")
+model_path = os.path.join(InferONNX_path, "models/onnx")
 os.makedirs(f"{model_path}/{model_name}/original_intra_ops/", exist_ok=True)
 os.makedirs(f"{model_path}/{model_name}/partitions_test/", exist_ok=True)
 
@@ -37,7 +37,7 @@ matmul_input = graph.input[0]
 matmul_output = graph.output[0]
 matmul_weight_initializer = graph.initializer[0] # second input
 
-tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{InferONNX_path}models/{model_name}/test_data_set_0/tokenizer.json")
+tokenizer = PreTrainedTokenizerFast(tokenizer_file=f"{InferONNX_path}models/onnx/{model_name}/test_data_set_0/tokenizer.json")
 print("Tokenizer vocab: ", len(tokenizer))
 
 matmul_weight = numpy_helper.to_array(matmul_weight_initializer)

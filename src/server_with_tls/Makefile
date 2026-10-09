@@ -11,6 +11,7 @@ USE_FILE_CACHING ?= 0
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -g
 LDFLAGS = -I./include -L ./lib -lmbedtls -lmbedx509 -lmbedcrypto
+LDFLAGS += -Wl,--gc-sections #addition
 
 ifeq ($(USE_FILE_CACHING), 1)
 	CFLAGS += -DUSE_FILE_CACHING

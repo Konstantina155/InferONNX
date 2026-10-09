@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 def run_inference(directory, test_path):
-    command = f"./standalone_inference {directory} {test_path}"
+    command = f"./standalone_inference {directory} {test_path} prompt.txt"
     try:
         output = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, out_stderr = output.communicate()
@@ -46,10 +46,10 @@ def main():
     make_build(num_tokens)
 
     for model_name in path:
-        test_path = f"../../../models/{model_name}/test_data_set_0/tokenizer.json"
-        inference_inter_operators = run_inference(f"../../../models/{model_name}/{partitions_inter}", test_path)
-        inference_intra_operators = run_inference(f"../../../models/{model_name}/{partitions_intra}", test_path)
-        inference_whole = run_inference(f"../../../models/{model_name}/", test_path)
+        test_path = f"../../../models/nnef/{model_name}/test_data_set_0/tokenizer.json"
+        inference_inter_operators = run_inference(f"../../../models/nnef/{model_name}/{partitions_inter}", test_path)
+        inference_intra_operators = run_inference(f"../../../models/nnef/{model_name}/{partitions_intra}", test_path)
+        inference_whole = run_inference(f"../../../models/nnef/{model_name}/", test_path)
 
         print(f"Inference result for {model_name} for {num_tokens} tokens:")
         print("Full model execution:", inference_whole)

@@ -4418,8 +4418,8 @@ def main():
 
     models = ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"]
     for model in models:
-        full_model_path = f"./models/{model}/{model}.onnx"
-        path_to_store_partitions = f"./models/{model}/partitions_inter/"
+        full_model_path = f"./models/onnx/{model}/{model}.onnx"
+        path_to_store_partitions = f"./models/onnx/{model}/partitions_inter/"
         os.makedirs(path_to_store_partitions, exist_ok=True)
 
         ###---------STEP 1: List node names (here or observe from Netron)---------###

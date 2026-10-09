@@ -39,9 +39,10 @@ typedef struct __attribute__((packed)) {
     char **names;
     uint64_t *size_models;
     uint8_t **models;
-    uint64_t* size_inputs;
+    uint64_t *size_inputs;
     float **input;
     unsigned char **tags;
+    char *prompt;
     uint64_t tokenizer_size;
     uint8_t *tokenizer; 
 } request;
@@ -62,21 +63,13 @@ typedef struct client_result
     unsigned char **tag;
 } client_result;
 
-typedef struct input_info {
-    void **input_values;
-    void **input_shapefacts;
-    void **input_datum_types;
-}input_info;
-
 typedef struct operator_node {
     #if USE_AES == 0 && USE_MEMORY_ONLY == 0 || USE_AES == 1 && USE_MEMORY_ONLY == 1
-        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, void *inference_model_ptr);
+        void (*run_inference)(struct operator_node **node, void **input_values_ptr, void *inference_model_ptr);
     #elif USE_AES == 1
-        void (*run_inference)(struct operator_node **node, input_info *input_info_ptr, struct EncryptionParameters *params, struct EncryptionParameters *params_weights);
+        void (*run_inference)(struct operator_node **node, void **input_values_ptr, struct EncryptionParameters *params);
     #endif
     void **outputs;
-    void **shapefacts;
-    void **datum_types;
     char *model_name;
     int num_inputs;
     int num_outputs;
@@ -100,17 +93,18 @@ typedef struct model
     unsigned char key[KEY_BYTES];
     unsigned char IV[IV_BYTES];
     unsigned char AAD[ADD_DATA_BYTES];
-    void **inference_models_ptr;   
+    void **inference_models_ptr; 
+    void *tokenizer_ptr;  
     operator_node *head;
     struct model *next;
 } model;
 
-typedef struct onnx_table
+typedef struct table
 {
     int count;
     model **model;
     unsigned int top;
-} onnx_table;
+} table;
 
 typedef struct {
     char *model_name;

@@ -394,10 +394,21 @@ deserialize_client_request(const char* buf, request* req)
         }
         req->tags = NULL;
 
+        // Char * field -> prompt
+        req->prompt = NULL;
+
         // Uint64_t field -> tokenizer_size
         memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
         offset += sizeof(uint64_t);
-        req->tokenizer = NULL;
+        
+        // Uint8_t* field -> tokenizer
+        if (req->tokenizer_size > 0) {
+            req->tokenizer = malloc(req->tokenizer_size * sizeof(uint8_t));
+            memcpy(req->tokenizer, buf + offset, req->tokenizer_size * sizeof(uint8_t));
+            offset += req->tokenizer_size * sizeof(uint8_t);
+        } else {
+            req->tokenizer = NULL;
+        }
     } else {
         // Uint64_t* field -> size_inputs
         if (num_inputs > 0) {
@@ -435,22 +446,21 @@ deserialize_client_request(const char* buf, request* req)
             req->tags = NULL;
         }
 
+        // char * field -> prompt
+#if NUM_TOKENS == 0
+        req->prompt = NULL;
+#else
+        req->prompt = strdup(buf + offset);
+        offset += strlen(buf + offset) + 1;
+#endif
+        fprintf(stderr, "Prompt is: %s", req->prompt);
+
+        req->num_models = 0;
         req->names = NULL;
         req->size_models = NULL;
         req->models = NULL;
-        req->num_models = 0;
-
-        memcpy(&req->tokenizer_size, buf + offset, sizeof(uint64_t));
-        offset += sizeof(uint64_t);
-
-        // Uint8_t* field -> tokenizer
-        if (req->tokenizer_size > 0) {
-            req->tokenizer = malloc(req->tokenizer_size * sizeof(uint8_t));
-            memcpy(req->tokenizer, buf + offset, req->tokenizer_size * sizeof(uint8_t));
-            offset += req->tokenizer_size * sizeof(uint8_t);
-        } else {
-            req->tokenizer = NULL;
-        }
+        req->tokenizer_size = 0;
+        req->tokenizer = NULL;
     }
 }
 
@@ -474,12 +484,6 @@ free_request(request *req_original)
         }
         free(req_original->models);
     }
-    if (req_original->tags != NULL) {
-        for (int i = 0; req_original->tags[i] != NULL; ++i) {
-            free(req_original->tags[i]);
-        }
-        free(req_original->tags);
-    }
     free(req_original->size_inputs);
     if (req_original->input != NULL) {
         for (int i = 0; i < num_inputs; ++i) {
@@ -487,13 +491,25 @@ free_request(request *req_original)
         }
         free(req_original->input);
     }
+    if (req_original->tags != NULL) {
+        for (int i = 0; req_original->tags[i] != NULL; ++i) {
+            free(req_original->tags[i]);
+        }
+        free(req_original->tags);
+    }
+    if (req_original->prompt != NULL) { 
+        free(req_original->prompt);
+    }
+    if (req_original->tokenizer != NULL) {
+        free(req_original->tokenizer);
+    }
 #if NUM_TOKENS > 0        
         tract_free_onig();
 #endif
 }
 
 client_result *
-handle_request(char *client_request, onnx_table *table)
+handle_request(char *client_request, table *t)
 {
     assert(client_request);
     
@@ -509,6 +525,7 @@ handle_request(char *client_request, onnx_table *table)
     int num_models = req_copy.num_models;
     uint64_t *size_models = req_copy.size_models;
     unsigned char **tags = req_copy.tags;
+    char *prompt = req_copy.prompt;
     uint64_t tokenizer_size = req_copy.tokenizer_size;
     uint8_t* tokenizer = req_copy.tokenizer;
 
@@ -516,7 +533,8 @@ handle_request(char *client_request, onnx_table *table)
     client_result *c_l = initialize_client_result();
     switch (command) {
     case 0: {
-        if (!names || num_models == 0 || !models || contains_empty_name(names, num_models) || (id != -1 || !input || tags || tokenizer_size != 0)) {
+        if (!names || num_models == 0 || !models || contains_empty_name(names, num_models) || (id != -1 || tags || prompt) || 
+            (size_inputs && !input && !tokenizer) || (size_inputs && input && tokenizer)) {
             fprintf(stderr, "Invalid request for MODEL\n");
             free_request(&req_copy);
             free(client_request);
@@ -527,7 +545,7 @@ handle_request(char *client_request, onnx_table *table)
 
         names = add_path_to_names(names, num_models);
 
-        if (find_duplicate_names_from_id(table, names)) {
+        if (find_duplicate_names_from_id(t, names)) {
             char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
                 fprintf(stderr, "Error allocating memory for error\n");
@@ -535,7 +553,7 @@ handle_request(char *client_request, onnx_table *table)
                 free(client_request);
                 return NULL;
             }
-            snprintf(error, SMALL_SIZE, "Model is already in the onnx table");
+            snprintf(error, SMALL_SIZE, "Model is already in the table");
             error[SMALL_SIZE - 1] = '\0';
             c_l->size = SMALL_SIZE;
             c_l->result = (unsigned char *) malloc((c_l->size + 1) * sizeof(unsigned char));
@@ -568,11 +586,20 @@ handle_request(char *client_request, onnx_table *table)
         memcpy(m->IV, me->IV, IV_BYTES);
         memcpy(m->AAD, me->AAD, ADD_DATA_BYTES);
         m->inference_models_ptr = NULL;
+        void *tokenizer_ptr = NULL;
+        if (tract_create_tokenizer(tokenizer, tokenizer_size, &tokenizer_ptr) != TRACT_RESULT_OK) {
+            fprintf(stderr, "Failed to create tokenizer\n");
+            free_encrypted_models_info(me, num_models);
+            free_request(&req_copy);
+            free(client_request);
+            return NULL;
+        }
+        m->tokenizer_ptr = tokenizer_ptr;
         m->head = NULL;
   
         load_model_to_memory(&m, me->tags, num_models);
 
-        char *id_str = insert_into_table(table, m);
+        char *id_str = insert_into_table(t, m);
         if (!id_str) {
             free_encrypted_models_info(me, num_models);
             free_request(&req_copy);
@@ -581,7 +608,7 @@ handle_request(char *client_request, onnx_table *table)
         }
         
         free_request(&req_copy);
-        print_table(table);
+        print_table(t);
 
         size = strlen(id_str);
         c_l->result = (unsigned char *) malloc((size + 1) * sizeof(unsigned char));
@@ -625,7 +652,8 @@ handle_request(char *client_request, onnx_table *table)
             }
         }
 
-        if (names || id == -1 || num_models != 0) {
+        if (names || id == -1 || num_models != 0 || prompt == NULL || 
+            tokenizer_size != 0 || tokenizer != NULL) {
             fprintf(stderr, "Invalid request for MODEL_INPUT for rest fields\n");
             free_request(&req_copy);
             return NULL;
@@ -654,7 +682,7 @@ handle_request(char *client_request, onnx_table *table)
         snprintf(id_str, required_size + 1, "%d", id);
 
         char *result = NULL;
-        model *m = get_model(table, id_str);
+        model *m = get_model(t, id_str);
         if (!m) {
             char *error = (char *) malloc(SMALL_SIZE * sizeof(char));
             if (!error) {
@@ -679,9 +707,9 @@ handle_request(char *client_request, onnx_table *table)
         }
 
 #if USE_MEMORY_ONLY == 0
-        result = inference_aes(input, num_inputs, &tokenizer, tokenizer_size, m, tags, m->size);
+        result = inference_aes(input, num_inputs, prompt, m, tags, m->size);
 #else
-        result = inference_memory_only(input, num_inputs, &tokenizer, tokenizer_size, m);
+        result = inference_memory_only(input, num_inputs, prompt, m);
 #endif
 
         if (!result) {
@@ -890,7 +918,7 @@ main(void)
 
     fprintf(stderr, " ok\n");
 
-    onnx_table *table = init_onnx_table(CAPACITY);
+    table *t = init_table(CAPACITY);
     char response[BUF_SIZE];
     unsigned char buf[BUF_SIZE];
     char *client_request = NULL;
@@ -988,7 +1016,7 @@ reset:
 
         if (ret == 3 && request_size == 24) {
             fprintf(stderr, "Client wants to close the connection...\n");
-            free_onnx_table(table);
+            free_table(t);
             ret = 0;
             goto exit;
         }
@@ -1083,7 +1111,7 @@ reset:
     gettimeofday(&t1_rest, NULL);
 #endif
 
-    client_result *c_l = handle_request(client_request, table);
+    client_result *c_l = handle_request(client_request, t);
     if (!c_l) {
         strcpy(response, "Invalid client_request from handle_request\n");
     } else {
@@ -1156,7 +1184,7 @@ reset:
     elapsed_time_handshake = 0.0;
 #endif
 
-    print_table(table);
+    print_table(t);
     fprintf(stderr, "Bytes written: %d\nResponse: %s\n", ret, (char *) response);
 
     if (strstr(response, "Inference:") != NULL) {

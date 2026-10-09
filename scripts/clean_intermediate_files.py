@@ -5,7 +5,7 @@ model_directory = [
 ]
 
 for model_dir in model_directory:
-    subprocess.run(["rm", "-rf", f"models/{model_dir}/original_intra_ops/", f"models/{model_dir}/partitions_test/"], check=True)
+    subprocess.run(["rm", "-rf", f"models/*/{model_dir}/original_intra_ops/", f"models/*/{model_dir}/partitions_test/"], check=True)
 
 subprocess.run(["rm", "-rf", "memory_intensive_ops/"], check=True)
 subprocess.run(["rm", "*.csv"], check=True)

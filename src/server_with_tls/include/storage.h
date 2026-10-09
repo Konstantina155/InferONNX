@@ -2,19 +2,19 @@
 
 size_t get_array_size(void **array);
 
-onnx_table *init_onnx_table(int capacity);
+table *init_table(int capacity);
 
-char *insert_into_table(onnx_table *table, model *m);
+char *insert_into_table(table *t, model *m);
 
-void resize_table(onnx_table *table, int index, model *m);
+void resize_table(table *t, int index, model *m);
 
-bool contains_key(onnx_table *table, char *id);
+bool contains_key(table *t, char *id);
 
-char *find_duplicate_names_from_id(onnx_table *table, char **names);
+char *find_duplicate_names_from_id(table *t, char **names);
 
-model *get_model(onnx_table *table, char *id);
+model *get_model(table *t, char *id);
 
-int remove_model_from_table(onnx_table *table, char *id);
+int remove_model_from_table(table *t, char *id);
 
 void free_inference_model_ptr(void *inference_model_ptr, ModelType type);
 
@@ -22,9 +22,9 @@ void free_inference_models_ptr(void **inference_models_ptr, int length, ModelTyp
 
 void deallocate_model(model *current);
 
-void free_onnx_table(onnx_table* table);
+void free_table(table* t);
 
-void print_table(onnx_table *table);
+void print_table(table *t);
 
 operator_io **init_operator_io(int length);
 

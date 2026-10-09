@@ -1,7 +1,7 @@
 #include <storage.h>
 
 //Hash table for storing the models
-// id -> model_names, key, IV, AAD, TractInferenceModels, TractLlmInferenceModel (for llm's)
+// id -> model_names, key, IV, AAD, TractInferenceModels, TractModel (for llm's)
 static unsigned int
 hash_function(const char* id)
 {
@@ -27,44 +27,44 @@ get_array_size(void **array)
     return size;
 }
 
-onnx_table*
-init_onnx_table(int capacity)
+table*
+init_table(int capacity)
 {
     if (capacity <= 0) return NULL;
 
-    onnx_table* table = (onnx_table*) malloc(sizeof(onnx_table));
-    assert(table);
+    table* t = (table*) malloc(sizeof(table));
+    assert(t);
 
-    table->top = 0;
-    table->count = 0;
-    table->model = (model**) malloc(CAPACITY * sizeof(model*));
-    assert(table->model);
+    t->top = 0;
+    t->count = 0;
+    t->model = (model**) malloc(CAPACITY * sizeof(model*));
+    assert(t->model);
 
     for (int i = 0; i < CAPACITY; i++)
-        table->model[i] = NULL;
+        t->model[i] = NULL;
 
-    return table;
+    return t;
 }
 
 char *
-insert_into_table(onnx_table *table, model *m)
+insert_into_table(table *t, model *m)
 {
-    assert(table);
+    assert(t);
     assert(m->names);
 
-    char *id_dup = find_duplicate_names_from_id(table, m->names);
+    char *id_dup = find_duplicate_names_from_id(t, m->names);
     if (id_dup) {
         return NULL;
     }
 
-    int id_int = table->count;
+    int id_int = t->count;
     int required_size = snprintf(NULL, 0, "%d", id_int + 1);
     char *id = (char*) malloc((required_size + 1) * sizeof(char));
     snprintf(id, required_size + 1, "%d", id_int + 1);
     id[required_size] = '\0';
 
     unsigned int index = hash_function(id);
-    if (contains_key(table, id)) {
+    if (contains_key(t, id)) {
         return NULL;
     };
     
@@ -80,34 +80,34 @@ insert_into_table(onnx_table *table, model *m)
     m->names = tmp_names;
 
     m->id = id;
-    if (!table->model[index]) {
-        table->model[index] = m;
-        table->top++;
+    if (!t->model[index]) {
+        t->model[index] = m;
+        t->top++;
     } else {
-        resize_table(table, index, m);
+        resize_table(t, index, m);
     }
 
-    table->count++;
+    t->count++;
     return id;
 }
 
 void
-resize_table(onnx_table *table, int index, model *m)
+resize_table(table *t, int index, model *m)
 {
-    assert(table);
+    assert(t);
     assert(m->id);
     assert(m->names);
 
     fprintf(stderr, "\nResizing table\n");
     
-    model *current = table->model[index];
+    model *current = t->model[index];
     model *previous = NULL;
     while (current) {
         previous = current;
         current = current->next;
     }
     if (previous == NULL) {
-        table->model[index] = m;
+        t->model[index] = m;
     } else {
         previous->next = m;
     }
@@ -115,14 +115,14 @@ resize_table(onnx_table *table, int index, model *m)
 }
 
 bool
-contains_key(onnx_table *table, char *id)
+contains_key(table *t, char *id)
 {
-    assert(table);
+    assert(t);
     assert(id);
     
     unsigned int index = hash_function(id);
     
-    model *current = table->model[index];
+    model *current = t->model[index];
     while (current){
         if (strcmp(current->id, id) == 0) return true;
         current = current->next;
@@ -132,13 +132,13 @@ contains_key(onnx_table *table, char *id)
 }
 
 char *
-find_duplicate_names_from_id(onnx_table *table, char **names)
+find_duplicate_names_from_id(table *t, char **names)
 {
-    assert(table);
+    assert(t);
     assert(names);
     
     for (int i = 0; i < CAPACITY; i++) {
-        model *current = table->model[i];
+        model *current = t->model[i];
         while (current){
             if (!current->names) continue;
             for (int j = 0; current->names[j]; j++) {
@@ -153,16 +153,16 @@ find_duplicate_names_from_id(onnx_table *table, char **names)
 }
 
 model*
-get_model(onnx_table *table, char *id)
+get_model(table *t, char *id)
 {
-    assert(table);
+    assert(t);
     assert(id);
 
     unsigned int index = hash_function(id);
     
-    model *current = table->model[index];
+    model *current = t->model[index];
     while (current){
-        if (strcmp(current->id, id) == 0) return table->model[index];
+        if (strcmp(current->id, id) == 0) return t->model[index];
         current = current->next;
     }
 
@@ -184,8 +184,8 @@ free_inference_model_ptr(void *inference_model_ptr, ModelType model_type)
             break;
         }
         case MODEL_TYPE_LLM: {
-            TractLlmInferenceModel *inference_model = (TractLlmInferenceModel *)inference_model_ptr;
-            if (tract_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
+            TractModel *inference_model = (TractModel *)inference_model_ptr;
+            if (tract_nnef_llm_inference_model_release(&inference_model) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error releasing inference model\n");
                 return;
             }
@@ -240,27 +240,30 @@ deallocate_model(model *current)
     model_type = MODEL_TYPE_LLM;
 #endif
     if (current->inference_models_ptr) free_inference_models_ptr(current->inference_models_ptr, current->size + 1, model_type);
+    if (current->tokenizer_ptr) {
+        tract_free_tokenizer((void **)&current->tokenizer_ptr);
+    }
     free_operator_node(current->head);
     free(current);
 }
 
 int
-remove_model_from_table(onnx_table *table, char *id)
+remove_model_from_table(table *t, char *id)
 {
-    assert(table);
+    assert(t);
     assert(id);
 
     model *previous = NULL;
     unsigned int index = hash_function(id);
-    model *current = table->model[index];
+    model *current = t->model[index];
 
     while (current) {
         if (strcmp(current->id, id) == 0){
             
             if (previous == NULL){
-                table->model[index]=current->next;
+                t->model[index]=current->next;
                 if (current->next == NULL) {
-                    table->top--;
+                    t->top--;
                 }
             } else{
                 previous->next=current->next;
@@ -277,14 +280,14 @@ remove_model_from_table(onnx_table *table, char *id)
 }
 
 void
-free_onnx_table(onnx_table* table)
+free_table(table* t)
 {
-    assert(table);
+    assert(t);
 
     model *current, *tmp;
 
     for (int i = 0; i < CAPACITY; i++) {
-        current = table->model[i];
+        current = t->model[i];
         while (current) {
             fprintf(stderr, "Freeing model with id: %s\n", current->id);
             tmp = current->next;
@@ -293,9 +296,9 @@ free_onnx_table(onnx_table* table)
         }
     }
     
-    table->top=0U;
-    free(table->model);
-    free(table);
+    t->top=0U;
+    free(t->model);
+    free(t);
 }
 
 static void
@@ -325,7 +328,7 @@ print_models(model *m, int index)
 #if NUM_TOKENS == 0
             fprintf(stderr, ",\n   TractInferenceModel: (not null)");
 #else
-            fprintf(stderr, ",\n   TractLlmInferenceModel: (not null)");
+            fprintf(stderr, ",\n   TractModel: (not null)");
 #endif
         } else {
             fprintf(stderr, ",\n   InferenceModelPtr: (null)");
@@ -342,16 +345,16 @@ print_models(model *m, int index)
 }
 
 void
-print_table(onnx_table *table)
+print_table(table *t)
 {    
-    assert(table);
+    assert(t);
 
     model *current;
     
-    if (table->top == 0U) return;
+    if (t->top == 0U) return;
     fprintf(stderr, "\nStart table...................\n");
     for (int index = 0; index < CAPACITY; index++){
-        current = table->model[index];
+        current = t->model[index];
         if (current){
             print_models(current, index);
         }
@@ -487,8 +490,6 @@ create_operator_node(char *model_name, int node_id)
     operator_node *node = (operator_node *)malloc(sizeof(operator_node));
     node->model_name = strdup(model_name);
     node->outputs = NULL;
-    node->shapefacts = NULL;
-    node->datum_types = NULL;
     node->num_inputs = -1;
     node->num_outputs = -1;
     node->num_children = 0;
@@ -637,17 +638,13 @@ free_operator_node_info(operator_node *node)
     if (strcmp(node->model_name, "input") == 0) return;
     if (node->outputs != NULL) {
         for (int i = 0; node->outputs[i] != NULL; i++) {
-            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+            if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value for llm\n");
                 return;
             }
         }
         free(node->outputs);
-        free(node->shapefacts);
-        free(node->datum_types);
         node->outputs = NULL;
-        node->shapefacts = NULL;
-        node->datum_types = NULL;
     }
 
 }
@@ -681,17 +678,13 @@ free_operator_node(operator_node *node)
                 return;
             }
 #else
-            if (tract_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
+            if (tract_nnef_llm_value_destroy(&node->outputs[i]) != TRACT_RESULT_OK) {
                 fprintf(stderr, "Error destroying tract value\n");
                 return;
             }            
 #endif
         }
         free(node->outputs);
-        #if NUM_TOKENS != 0
-            free(node->shapefacts);
-            free(node->datum_types);
-        #endif
     }
 
     if (node->children) {

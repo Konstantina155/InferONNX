@@ -40,6 +40,7 @@ typedef struct __attribute__((packed)) {
     uint64_t* size_inputs;
     float **input;
     unsigned char **tags;
+    char *prompt;
     uint64_t tokenizer_size;
     uint8_t *tokenizer;
 } request;
@@ -153,12 +154,19 @@ add_shape_to_array(float *image, size_t *shape)
 static void *
 assign_into_array(FILE *fd, int size, int element_size)
 {
-    void *data = malloc(size * element_size);
+    int count = 0;
+    if (element_size == sizeof(char)) {
+        count = 1;
+    }
+    void *data = malloc(size * element_size + count);
     if (!data) {
         fprintf(stderr, "Error allocating memory for file data\n");
         return NULL;
     }
     assert(fread(data, element_size, size, fd) == (size_t)size);
+    if (element_size == sizeof(char)) {
+        ((char *)data)[size * element_size] = '\0';
+    }
     return data;
 }
 
@@ -225,6 +233,11 @@ calculate_buffer_size(const request* req)
         for (int i = 0; i < size; ++i) {
             bytes += TAG_SIZE * 2;
         }
+    }
+
+    // Char* prompt field
+    if (req->prompt != NULL) {
+        bytes += strlen(req->prompt) + 1;
     }
 
     // Uint64_t field -> tokenizer_size
@@ -306,6 +319,12 @@ serialize_client_request(const request* req, ssize_t buffer_len)
         }
     }
 
+    // Char* field -> prompt
+    if (req->prompt != NULL) {
+        strcpy(buffer + bytes, req->prompt);
+        bytes += strlen(req->prompt) + 1;
+    }
+
     // Uint64_t field -> tokenizer_size
     memcpy(buffer + bytes, &req->tokenizer_size, sizeof(uint64_t));
     bytes += sizeof(uint64_t);
@@ -348,6 +367,9 @@ free_request(request *req_original)
             free(req_original->input[i]);
         }
         free(req_original->input);
+    }
+    if (req_original->prompt != NULL) { 
+        free(req_original->prompt);
     }
     if (req_original->tokenizer != NULL) {
         free(req_original->tokenizer);
@@ -780,6 +802,8 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     int temp_calculated_shape = 0;
     size_t *temp_shape = NULL;
 
+    req_original.prompt = NULL;
+
     int num_inputs = get_array_size((void **)input_files) - 1;
     req_original.size_inputs = (uint64_t *)malloc(num_inputs * sizeof(uint64_t));
     assert(req_original.size_inputs);
@@ -796,22 +820,48 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
             return;
         }
 
-        temp_shape = decode_pb(fd);
-        temp_calculated_shape = (temp_shape[0] * temp_shape[1] * temp_shape[2] * temp_shape[3]) + 4;
+        fprintf(stderr, "Input: %s\n", input_files[i]);
+        if (strstr(input_files[i], "tokenizer.json") != NULL) {
+            int size = size_of_file(fd);
+            if (size < 0) {
+                return;
+            }
+            rewind(fd);
+            
+            free(req_original.input);
+            free(req_original.size_inputs);
+            req_original.num_inputs = 0;
+            req_original.size_inputs = NULL;
+            req_original.input = NULL;
+            req_original.tokenizer_size = size;
+            req_original.tokenizer = (uint8_t *)assign_into_array(fd, size, sizeof(uint8_t));
+            if (!req_original.tokenizer) {
+                fprintf(stderr, "Error assigning image to array\n");
+                return;
+            }
+        } else {
+            fprintf(stderr, "Not tokenizer\n");
+            temp_shape = decode_pb(fd);
+            temp_calculated_shape = (temp_shape[0] * temp_shape[1] * temp_shape[2] * temp_shape[3]) + 4;
 
-        req_original.input[i] = (float *)assign_into_array(fd, temp_calculated_shape - 4, sizeof(float));
-        if (!req_original.input) {
-            fprintf(stderr, "Error assigning image to array\n");
-            return;
+            req_original.input[i] = (float *)assign_into_array(fd, temp_calculated_shape - 4, sizeof(float));
+            if (!req_original.input) {
+                fprintf(stderr, "Error assigning image to array\n");
+                return;
+            }
+
+            req_original.input[i] = add_shape_to_array(req_original.input[i], temp_shape);
+            if (!req_original.input[i]) {
+                fprintf(stderr, "Error adding shape to array: %d\n", i);
+                return;
+            }
+
+            req_original.size_inputs[i] = temp_calculated_shape;
+            fprintf(stderr, "Size of input: %ld\n", req_original.size_inputs[i]);
+
+            req_original.tokenizer_size = 0;
+            req_original.tokenizer = NULL;
         }
-
-        req_original.input[i] = add_shape_to_array(req_original.input[i], temp_shape);
-        if (!req_original.input[i]) {
-            fprintf(stderr, "Error adding shape to array: %d\n", i);
-            return;
-        }
-
-        req_original.size_inputs[i] = temp_calculated_shape;
 
         fclose(fd);
     }
@@ -888,8 +938,6 @@ send_models(char **input_files, struct dirent **namelist, const char *dir_path, 
     req_original.models[req_original.num_models] = NULL;
 
     req_original.tags = NULL;
-    req_original.tokenizer_size = 0;
-    req_original.tokenizer = NULL;
 
     size_t bufLen = calculate_buffer_size(&req_original);
 
@@ -989,6 +1037,8 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
     req_original.names = NULL;
     req_original.size_models = NULL;
     req_original.models = NULL;
+    req_original.tokenizer_size = 0;
+    req_original.tokenizer = NULL;
 
     if (size_tags == 0) {
         req_original.tags = NULL;
@@ -1025,7 +1075,7 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
         }
 
         fprintf(stderr, "Input: %s\n", input_names[i]);
-        if (strstr(input_names[i], "tokenizer.json") != NULL) {
+        if (strstr(input_names[i], "prompt.txt") != NULL) {
             int size = size_of_file(fd);
             if (size < 0) {
                 return;
@@ -1037,14 +1087,14 @@ send_inputs(char **input_names, int id, unsigned char **tags, int size_tags)
             req_original.num_inputs = 0;
             req_original.size_inputs = NULL;
             req_original.input = NULL;
-            req_original.tokenizer_size = size;
-            req_original.tokenizer = (uint8_t *)assign_into_array(fd, size, sizeof(uint8_t));
-            if (!req_original.tokenizer) {
-                fprintf(stderr, "Error assigning image to array\n");
+            req_original.prompt = (char *)assign_into_array(fd, size, sizeof(char));
+            fprintf(stderr, "Prompt is: %s", req_original.prompt);
+            if (!req_original.prompt) {
+                fprintf(stderr, "Error assigning prompt\n");
                 return;
             }
         } else {
-            fprintf(stderr, "Not tokenizer\n");
+            fprintf(stderr, "Not prompt\n");
             temp_shape = decode_pb(fd);
             temp_calculated_shape = (temp_shape[0] * temp_shape[1] * temp_shape[2] * temp_shape[3]) + 4;
 
@@ -1095,6 +1145,7 @@ send_quit()
     req_original.models = NULL;
     req_original.input = NULL;
     req_original.tags = NULL;
+    req_original.prompt = NULL;
     req_original.tokenizer = NULL;
     req_original.tokenizer_size = 0;
     size_t bufLen = calculate_buffer_size(&req_original);

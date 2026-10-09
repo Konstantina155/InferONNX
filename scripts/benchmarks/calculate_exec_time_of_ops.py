@@ -133,9 +133,15 @@ def parse_execution_times(file_content, operation, file_path):
     lines = lines[2:]
     if operation == "head_matmul":
         if "gpt" in file_path:
-            start_point = "/transformer/Reshape_3_output_0"
+            if model_format == "onnx":
+                start_point = "/transformer/Reshape_3_output_0"
+            else:
+                start_point = "__transformer_Reshape_3_output_0"
         else:
-            start_point = "/model/norm/Mul_1_output_0"
+            if model_format == "onnx":
+                start_point = "/model/norm/Mul_1_output_0"
+            else:
+                start_point = "__model_norm_Mul_1_output_0"
         end_point = "logits_0"
     elif operation == "gate_proj_matmul":
         start_point = "/mlp/gate_proj/MatMul"
@@ -189,10 +195,11 @@ def parse_execution_times(file_content, operation, file_path):
         else:
             continue
 
-    if "proj_matmul" not in operation and "gemm" not in operation:
+    if "matmul" not in operation and "gemm" not in operation:
         time.append(current_time)
         result = sum(time)
     else:
+        if "head_matmul" in operation: time.append(current_time)
         result = sum(time) / len(time)
     if debug:
         print(time, len(time))
@@ -217,9 +224,15 @@ def process_file(file_path, occurrence, operation):
 
     if operation == "head_matmul":
         if "gpt" not in file_path:
-            split_point = '"/model/norm/Mul_1" Mul'
+            if model_format == "onnx":
+                split_point = '"/model/norm/Mul_1" Mul'
+            else:
+                split_point =  '"__model_norm_Mul_1_1" Mul'
         else:
-            split_point = '"/transformer/ln_f/Add_1" Add'
+            if model_format == "onnx":
+                split_point = '"/transformer/ln_f/Add_1" Add'
+            else:
+                split_point = '"__transformer_ln_f_Add_1_0" Add'
         parts = extracted_content.split(split_point, 1)
     elif operation == "gate_proj_matmul":
         split_point = '"/model/layers.0/post_attention_layernorm/Mul_1" Mul'
@@ -268,21 +281,23 @@ def process_file(file_path, occurrence, operation):
     print(f"Average execution time: {exec_time}")
 
 def main():
-    if len(sys.argv) != 5 and len(sys.argv) != 6:
-        print("python3 calculate_exec_time_of_ops.py <inferONNX_path> <gather/head_matmul/gate_proj_matmul/up_proj_matmul/down_proj_matmul/c_fc_gemm/c_proj_gemm/all> <model_name> <occurence_from_beginning> <debug/''>")
+    if len(sys.argv) != 6 and len(sys.argv) != 7:
+        print("python3 calculate_exec_time_of_ops.py <inferONNX_path> <gather/head_matmul/gate_proj_matmul/up_proj_matmul/down_proj_matmul/c_fc_gemm/c_proj_gemm/all> <model_name> <occurence_from_beginning> <onnx/nnef> <debug/''>")
         sys.exit(1)
 
-    global debug
+    global debug, model_format
     inferONNX_path = sys.argv[1]
     operation = sys.argv[2]
     file_name = sys.argv[3]
     occurence = int(sys.argv[4])
+    model_format = sys.argv[5]
     assert file_name in ["gpt2", "smol-llama-220M-GQA", "mistral-300M", "qwen2.5-0.5B"], "Model name is not correct"
     assert operation in ["head_matmul", "gather", "up_proj_matmul", "gate_proj_matmul", "down_proj_matmul", "c_fc_gemm", "c_proj_gemm", "all"], "Operation should be gather or head_matmul or {gate/up/down}_proj/matmul / {c_fc/c_proj}/Gemm or all"
     assert occurence > 0, "Occurence is not > 0"
+    assert model_format in ["onnx", "nnef"], "Model format is not correct"
     
-    if len(sys.argv) == 6:
-        assert sys.argv[5] == "debug", "Debug mode is not correct"
+    if len(sys.argv) == 7:
+        assert sys.argv[6] == "debug", "Debug mode is not correct"
         debug = True
     else:
         debug = False

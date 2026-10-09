@@ -59,7 +59,7 @@ def client_side(partition_folder, unique_id):
 
     print(f"\nCurrent directory: {os.getcwd()}")
 
-    path_ = f"{inferONNX_path}/models/{path[unique_id]}"
+    path_ = f"{inferONNX_path}/models/nnef/{path[unique_id]}"
     input_file = f"{path_}test_data_set_0/input_0.pb"
     if is_llm:
         input_file = f"{path_}test_data_set_0/tokenizer.json"
@@ -76,7 +76,7 @@ def client_side(partition_folder, unique_id):
 
     print("In hereeee")
 
-    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {input_file}"
+    command = f"{server_with_tls_path}/ssl_client inputs 1 {tag_file} {inferONNX_path}/src/server_with_tls/scripts/prompt.txt"
     run_command_without_output(command)
     close_connection()
 
@@ -206,12 +206,16 @@ def main():
         occlum_user_space = ["5GB", "6GB", "9GB", "16GB"]
     else:
         if "gpt" in model_folder:
+            path = ["gpt2/"]
             occlum_user_space = ["5GB"]
-        elif"llama" in model_folder:
+        elif "llama" in model_folder:
+            path = ["smol-llama-220M-GQA/"]
             occlum_user_space = ["6GB"]
-        elif "" in model_folder:
+        elif "mistral" in model_folder:
+            path = ["mistral-300M/"]
             occlum_user_space = ["9GB"]
         else:
+            path = ["qwen2.5-0.5B/"]
             occlum_user_space = ["16GB"]
 
 

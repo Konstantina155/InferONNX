@@ -9,6 +9,7 @@ USE_FILE_CACHING ?= 0
 
 CFLAGS = -Wall -Wextra -pedantic -g -std=gnu11
 LDFLAGS = -I../include -L ../lib -lmbedtls -lmbedx509 -lmbedcrypto
+LDFLAGS += -Wl,--gc-sections #addition
 
 ifeq ($(USE_OCCLUM), 1)
 	CC = occlum-gcc

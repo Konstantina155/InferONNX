@@ -39,7 +39,7 @@ def client_side(unique_id):
 
     print(f"\nCurrent directory: {os.getcwd()}")
 
-    path_ = f"{inferONNX_path}/models/{path[unique_id]}"
+    path_ = f"{inferONNX_path}/models/nnef/{path[unique_id]}"
     input_file = f"{path_}test_data_set_0/input_0.pb"
     is_llm = "gpt" in path[unique_id] or "llama" in path[unique_id] or "mistral" in path[unique_id] or "qwen" in path[unique_id]
     if is_llm:
@@ -49,11 +49,14 @@ def client_side(unique_id):
         run_command("sudo sysctl -w vm.drop_caches=3")
 
     command = f"{client_command} models {input_file} {path_}"
+    print(command)
     run_command_without_output(command)
 
     if "on_disk" in configuration:
         run_command("sudo sysctl -w vm.drop_caches=3")
 
+    if is_llm and "tls" in configuration:
+        input_file = f"{inferONNX_path}/src/server_with_tls/scripts/prompt.txt"
     command = f"{client_command} inputs 1 {input_file}"
     run_command_without_output(command)
     close_connection()

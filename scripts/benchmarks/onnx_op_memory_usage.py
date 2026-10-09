@@ -120,7 +120,7 @@ def get_execution_times(models): # head_matmul, gather, average of gate + up, do
             if ("gpt" in model and "proj_matmul" in op) or ("gpt" not in model and "gemm" in op):
                 average_time = 0.0
             else:
-                result = run_command_with_output(f"python3 {inferONNX_path}/scripts/benchmarks/calculate_exec_time_of_ops.py {inferONNX_path} {op} {model} 1")
+                result = run_command_with_output(f"python3 {inferONNX_path}/scripts/benchmarks/calculate_exec_time_of_ops.py {inferONNX_path} {op} {model} 1 onnx")
                 average_time = result.rsplit("Average execution time:", 1)[-1].lstrip().split("\n")[0]
             times.append(float(average_time))
         exec_time[model] = times
@@ -228,7 +228,7 @@ def main():
     global inferONNX_path, models_dir, MODEL_TO_NAMES
     inferONNX_path = sys.argv[1]
 
-    models_dir = os.path.join(inferONNX_path, "models/")
+    models_dir = os.path.join(inferONNX_path, "models/onnx/")
     MODEL_TO_NAMES = {
         'gpt2': 'GPT-2 (0.124B)',
         'smol-llama-220M-GQA': 'LLaMA 2 (0.22B)',
