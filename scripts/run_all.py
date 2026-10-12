@@ -25,13 +25,13 @@ def run_command(command):
     subprocess.run(command, shell=True, check=True)
     
 def run_all_and_create_plot(path_to_scripts, number_of_runs, inter_partitions_folder, intra_partitions_folder, inferONNX_path):  
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching entire 1 {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {inter_partitions_folder} 1 {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {intra_partitions_folder} 1 {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire 1 {number_of_runs} {inferONNX_path}")
-    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching entire 50 {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {inter_partitions_folder} 50 {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py on_disk_caching {intra_partitions_folder} 50 {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_occlum.py memory_only entire 50 {number_of_runs} {inferONNX_path}")
+    run_command(f"python3 {path_to_scripts}/inference/run_models_in_cpu.py tls_memory_only 50 {number_of_runs} {inferONNX_path}")
 
-    run_command(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {inter_partitions_folder} {intra_partitions_folder} {number_of_runs}")
+    #run_command(f"python3 {path_to_scripts}/create_plots.py {inferONNX_path} {inter_partitions_folder} {intra_partitions_folder} {number_of_runs}")
 
 def measure_each_op_time(path_to_scripts, model_folder, intra_partitions_folder, inferONNX_path):
     os.makedirs(f"{inferONNX_path}/memory_intensive_ops", exist_ok=True)

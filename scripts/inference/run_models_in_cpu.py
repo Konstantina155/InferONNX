@@ -12,10 +12,10 @@ def run_command_without_output(cmd, cwd=None):
     process = subprocess.Popen(cmd, cwd=cwd, shell=True)
     process.wait()
 
-def init_server_client(num_tokens):
+def init_server_client(number_of_tokens):
     use_file_cache = 0 if configuration == "tls_on_disk" else 1
 
-    build_flags = f"USE_AES=0 USE_OCCLUM=0 USE_FILE_CACHING={use_file_cache} NUM_TOKENS={num_tokens}"
+    build_flags = f"USE_AES=0 USE_OCCLUM=0 USE_FILE_CACHING={use_file_cache} NUM_TOKENS={number_of_tokens}"
     run_command_without_output(f"make clean && make USE_SYS_TIME=1 {build_flags} server", cwd=f"{server_with_tls_path}/src")
     run_command_without_output(f"make clean && make USE_SYS_TIME=0 {build_flags}", cwd=server_with_tls_path)
 
@@ -65,12 +65,7 @@ def manage_connection():
     unique_id = 0
     for model_name in path:
         if "tls" in configuration:
-            num_tokens = 0
-            is_llm = "gpt" in path[unique_id] or "llama" in path[unique_id] or "mistral" in path[unique_id] or "qwen" in path[unique_id]
-            if is_llm:
-                num_tokens = 1
-
-            init_server_client(num_tokens)
+            init_server_client(number_of_tokens)
 
         if configuration == "memory_only_operators":
             with open(f"{inferONNX_path}/memory_intensive_ops/{model_name[:-1]}.txt", 'a') as file:
@@ -97,14 +92,15 @@ def close_connection():
     run_command_without_output(client_command)
 
 def main():
-    if len(sys.argv) != 4 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "tls_memory_only", "tls_on_disk"]:
-        print("Usage: python3 run_models_in_cpu.py <memory_only/memory_only_operators/on_disk/tls_memory_only/tls_on_disk> <number_of_runs> <path_to_inferONNX>")
+    if len(sys.argv) != 5 or sys.argv[1] not in ["memory_only", "memory_only_operators", "on_disk", "tls_memory_only", "tls_on_disk"]:
+        print("Usage: python3 run_models_in_cpu.py <memory_only/memory_only_operators/on_disk/tls_memory_only/tls_on_disk> <number_of_tokens> <number_of_runs> <path_to_inferONNX>")
         exit(1)
 
-    global configuration, num_runs, inferONNX_path
+    global configuration, num_runs, inferONNX_path, number_of_tokens
     configuration = sys.argv[1]
-    num_runs = int(sys.argv[2])
-    inferONNX_path = sys.argv[3]
+    number_of_tokens = int(sys.argv[2])
+    num_runs = int(sys.argv[3])
+    inferONNX_path = sys.argv[4]
 
     global server_with_tls_path, server_without_tls_path
     server_with_tls_path = os.path.join(inferONNX_path, "src/server_with_tls")
